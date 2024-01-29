@@ -15,14 +15,21 @@ class BimanualController():
 
     """
             
-    def __init__(self, l_arm, r_arm, dt=0.01):
+    def __init__(self, l_arm, r_arm, base_tf, dt=0.01):
+
+        self.base_tf = sm.SE3(base_tf)
+        self.l_arm = l_arm
+        self.r_arm = r_arm
+
+
 
         pass
-
-    def set_target(self, target):
+    
+    def set_target_velocity(self, target):
         """
-        Set the target pose for the bimanual controller, which is the pose to be control objective.\n
+        Set the target velocity for the bimanual controller, which is the pose to be control objective.\n
         This frame is set by the median of the relative TF between two arms end-effector and is used to define the constraint Jacobian matrix J.\n"""
+
         pass
 
     def nullspace_projection(self, J, Jbar):
