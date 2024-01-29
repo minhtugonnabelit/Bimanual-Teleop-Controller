@@ -24,11 +24,15 @@ class BimanualController():
 
 
         pass
-    
+
     def set_target_velocity(self, target):
         """
         Set the target velocity for the bimanual controller, which is the pose to be control objective.\n
-        This frame is set by the median of the relative TF between two arms end-effector and is used to define the constraint Jacobian matrix J.\n"""
+        This frame is set by the median of the relative TF between two arms end-effector and is used to define the constraint Jacobian matrix J.\n
+        
+        - One method could be comparing which velocity is more damped and pick that one as the target velocity.\n
+        - Another method could be using the nullspace projection to minimize the error when each arm is near the singular condition.\n
+        """
 
         pass
 
