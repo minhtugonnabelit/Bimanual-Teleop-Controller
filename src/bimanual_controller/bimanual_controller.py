@@ -21,7 +21,7 @@ class BimanualController():
         self.l_arm = l_arm
         self.r_arm = r_arm
 
-
+        self.dt = dt
 
         pass
 
