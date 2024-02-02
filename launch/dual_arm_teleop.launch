@@ -1,0 +1,17 @@
+<launch>
+    <group ns="right_arm">
+        <param name="joy_topic" value="/hydra_right_joy"/>
+        <param name="twist_topic" value="/r_arm_servo_server/delta_twist_cmds"/>
+        <param name="controller_frame_id" value="/hydra_right_grab"/>
+        <param name="base_frame_id" value="/hydra_base"/>
+        <node name="hydra_reader" pkg="bimanual_teleop_controller" type="hydra_reader.py" output="screen"/>
+    </group>
+
+    <group ns="left_arm">
+        <param name="joy_topic" value="/hydra_left_joy"/>
+        <param name="twist_topic" value="/l_arm_servo_server/delta_twist_cmds"/>
+        <param name="controller_frame_id" value="/hydra_left_grab"/>
+        <param name="base_frame_id" value="/hydra_base"/>
+        <node name="hydra_reader" pkg="bimanual_teleop_controller" type="hydra_reader.py" output="screen"/>
+    </group>
+</launch>

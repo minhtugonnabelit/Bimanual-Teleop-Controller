@@ -4,26 +4,39 @@ import time
 from geometry_msgs.msg import TwistStamped
 from sensor_msgs.msg import Joy
 
-import copy 
+class HydraTwist():
 
-class HydraReader():
+    _MAX_LIN_GAIN = 5
+    _MAX_ANG_GAIN = 10
+    _SWITCH_DEBOUCE_INTERVAL = 1
 
-    def __init__(self):
+    def __init__(self, joy_topic, twist_topic, controller_frame_id, base_frame_id):
 
+        # Data members to load from the parameter server
+        self._controller_frame_id = controller_frame_id
+        self._base_frame_id = base_frame_id
+
+        # Data members to be initialized
+        self._linear_gain = 0
+        self._angular_gain = 0
         self._last_switch_time = 0
-        self._switch_debounce_interval = 1 # 300ms delay between switching arms
-
-        self._tf_listener = tf.TransformListener()
-        self._joysub = rospy.Subscriber("/hydra_joy", Joy, self._joy_callback)
-
-        self._right_twist_pub = rospy.Publisher("/r_arm_servo_server/delta_twist_cmds", TwistStamped, queue_size=1)
-        self._left_twist_pub = rospy.Publisher("/l_arm_servo_server/delta_twist_cmds", TwistStamped, queue_size=1)
-
-        self._current_twist_pub = self._right_twist_pub
         self._switched = False
+        self._trigger_index = -2
+        self._bumper_index = -4
+
+        # Initialize ROS components
         self._twiststamped_msg = TwistStamped()
-        self._linear_gain = [0, 0]
-        self._angular_gain = [0, 0]
+        self._tf_listener = tf.TransformListener()
+        self._joysub = rospy.Subscriber(joy_topic, Joy, self._joy_callback)
+        self._twist_pub = rospy.Publisher(twist_topic, TwistStamped, queue_size=1)
+
+
+        # self._left_twist_pub = rospy.Publisher("/l_arm_servo_server/delta_twist_cmds", TwistStamped, queue_size=1)
+
+        # self._current_twist_pub = self._right_twist_pub
+
+        # self._twist_pub = self._right_twist_pub
+
 
     def _joy_callback(self, msg):
         """
@@ -35,28 +48,19 @@ class HydraReader():
         The gain is set to 0 if the right trigger is not pressed.\n
         """
 
-        if msg.buttons[3] == 1:
-            self._handle_arm_switch()
+        # if msg.buttons[3] == 1:
+        #     self._handle_arm_switch()
 
-        if msg.buttons[-7] == 1:
-            
-            self._linear_gain[0] = msg.axes[-7] * 2
-            self._angular_gain[0] = msg.axes[-7] * 5
+        self._linear_gain = msg.axes[self._trigger_index] * self._MAX_LIN_GAIN if msg.buttons[self._trigger_index] == 1 else 0
+        self._angular_gain = msg.axes[self._trigger_index] * self._MAX_ANG_GAIN if msg.buttons[self._trigger_index] == 1 else 0
 
-            self._linear_gain[1] = msg.axes[-7] * 2
-            self._angular_gain[1] = msg.axes[-7] * 5
-
-
-        else:
-            self._linear_gain = [0, 0]
-            self._angular_gain = [0, 0]
 
     def _handle_arm_switch(self):
         """
         Handles the arm switching logic with debouncing.
         """
         current_time = time.time()
-        if current_time - self._last_switch_time >= self._switch_debounce_interval:
+        if current_time - self._last_switch_time >= self._SWITCH_DEBOUCE_INTERVAL:
             self._last_switch_time = current_time
             self._switch_arms()
 
@@ -66,13 +70,14 @@ class HydraReader():
         The arms are switched by pressing the left trigger of the hydra joystick.\n
         The arms are switched by changing the topic of the current twist publisher.\n
         """
+        pass
 
-        if self._switched:
-            self._current_twist_pub = self._right_twist_pub
-            self._switched = False
-        else:
-            self._current_twist_pub = self._left_twist_pub
-            self._switched = True
+        # if self._switched:
+        #     self._current_twist_pub = self._right_twist_pub
+        #     self._switched = False
+        # else:
+        #     self._current_twist_pub = self._left_twist_pub
+        #     self._switched = True
 
 
     def _twist_to_twist_stamped_msg(self, controller_frame_id, base_frame_id, lin_gain, ang_gain):
@@ -109,22 +114,30 @@ class HydraReader():
 
             if not synced:
                 try:
-                    self._tf_listener.waitForTransform("/hydra_right_grab", "/hydra_base", rospy.Time(), rospy.Duration(20))
+                    self._tf_listener.waitForTransform(self._controller_frame_id, self._base_frame_id, rospy.Time(), rospy.Duration(20))
                     synced = True
                 except:
                     rospy.logwarn("Waiting for tf")
                     continue
-            
-            right_twist = self._twist_to_twist_stamped_msg("/hydra_right_grab", "/hydra_base", self._linear_gain[0], self._angular_gain[0])
-            self._current_twist_pub.publish(right_twist)
+                
+            twist_msg = self._twist_to_twist_stamped_msg(self._controller_frame_id, self._base_frame_id, self._linear_gain, self._angular_gain)
+            self._twist_pub.publish(twist_msg)
 
             rate.sleep()
+            
     
 if __name__ == "__main__":
         
     rospy.init_node("hydra_reader")
 
-    hydra_reader = HydraReader()
+    # Retrieve parameters
+    joy_topic = rospy.get_param('joy_topic')
+    twist_topic = rospy.get_param('twist_topic')
+    base_frame_id = rospy.get_param('base_frame_id')
+    controller_frame_id = rospy.get_param('controller_frame_id')
+
+    # Create and run the hydra reader
+    hydra_reader = HydraTwist(joy_topic, twist_topic, controller_frame_id, base_frame_id)
     hydra_reader.run()
         
 
