@@ -1,8 +1,0 @@
-<!-- FILEPATH: /home/anhminh/ws/capstone/src/Bimanual-Teleop-Controller/launch/twist_conversion.launch -->
-
-<launch>
-    <!-- Launch the twist_conversion node -->
-    <node name="twist_conversion_node" pkg="Bimanual-Teleop-Controller" type="twist_conversion.py" output="screen">
-        <param name="raw" value="true"/> <!-- Set the 'raw' parameter to true -->
-    </node>
-</launch>
