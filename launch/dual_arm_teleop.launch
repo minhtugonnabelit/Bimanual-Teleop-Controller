@@ -4,6 +4,7 @@
         <param name="twist_topic" value="/r_arm_servo_server/delta_twist_cmds"/>
         <param name="controller_frame_id" value="/hydra_right_grab"/>
         <param name="base_frame_id" value="/hydra_base"/>
+        <param name="timeout" value="0.1"/>
         <node name="hydra_reader" pkg="bimanual_teleop_controller" type="hydra_reader.py" output="screen"/>
     </group>
 
@@ -12,6 +13,7 @@
         <param name="twist_topic" value="/l_arm_servo_server/delta_twist_cmds"/>
         <param name="controller_frame_id" value="/hydra_left_grab"/>
         <param name="base_frame_id" value="/hydra_base"/>
+        <param name="timeout" value="0.1"/>
         <node name="hydra_reader" pkg="bimanual_teleop_controller" type="hydra_reader.py" output="screen"/>
     </group>
 </launch>
