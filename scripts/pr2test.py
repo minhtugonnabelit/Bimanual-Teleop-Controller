@@ -1,12 +1,12 @@
-import numpy as np
 import roboticstoolbox as rtb
 import spatialgeometry as geometry
 import spatialmath.base as smb
 import spatialmath as sm
 import matplotlib.pyplot as plt
-from scipy import linalg
 from swift import Swift     
 
+import numpy as np
+from scipy import linalg
 from math import pi
 from copy import deepcopy
 
@@ -51,13 +51,13 @@ joined_in_right = linalg.inv(sm.SE3(right_tip_pose)) @ joined.A
 ad_right = smb.tr2jac(joined_in_right)
 
 # Set the target pose
-target = joined.A @ sm.SE3(0.0, -0.2, 0.1).A @ sm.SE3.RPY(0.2,0.2,0.2).A
+# target = joined.A @ sm.SE3(0.0, -0.2, 0.1).A @ sm.SE3.RPY(0.2,0.2,0.2).A
 
 # Target pose for the drift test case: Only angular motion
 # target = joined.A @  sm.SE3.RPY(0.1,0.1,0.1).A
 
 # Target pose for the drift test case: Only linear motion
-# target = joined.A @ sm.SE3(0.1, -0.2, -0.1).A 
+target = joined.A @ sm.SE3(0.1, -0.2, -0.1).A 
 
 target_ax = geometry.Axes(length=0.05, pose = target )
 
@@ -81,7 +81,7 @@ while not arrived:
                                         method='angle-axis')  # Servoing in the end-effector frame using angle-axis representation for angular error
     
     exp_twist = smb.trexp(middle_twist * dt)    # Exponential mapping
-    joined = joined * sm.SE3(exp_twist)         # Update the joined frame
+    joined = joined @ sm.SE3(exp_twist)         # Update the joined frame
     joined_ax.T = joined                        # Update the visualization of the joined frame
     
     # Compute the twist transformation from the middle frame to the left and right frames
