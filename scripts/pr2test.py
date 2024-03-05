@@ -61,11 +61,9 @@ joined_ax = geometry.Axes(length=0.05, pose = joined.A )
 
 joined_in_left = linalg.inv(sm.SE3(left_tip_pose)) @ joined.A
 ad_left = adjoint_transform(joined_in_left)
-print(ad_left)
 
 joined_in_right = linalg.inv(sm.SE3(right_tip_pose)) @ joined.A
 ad_right = adjoint_transform(joined_in_right)
-print(ad_right)
 
 # Set the target pose 
 
@@ -104,18 +102,22 @@ while not arrived:
     joined = joined @ sm.SE3(exp_twist)         # Update the joined frame
     joined_ax.T = joined                        # Update the visualization of the joined frame
     
-    # Compute the twist transformation from the middle frame to the left and right frames
-    left_twist = ad_left @ middle_twist 
-    right_twist = ad_right @ middle_twist
+
+    # ---------------------------------------------------------------------------#
+    # SECTION TO PERFORMS TWIST TRANSFORMATION IN A RIGID BODY MOTION  
+
+    # # Compute the twist transformation from the middle frame to the left and right frames
+    # left_twist = ad_left @ middle_twist 
+    # right_twist = ad_right @ middle_twist
 
 
-    # left_twist = np.zeros(6)
-    # left_twist[3:6] = middle_twist[3:6]
-    # left_twist[0:3] = middle_twist[0:3] + np.cross( middle_twist[3:6], joined_in_left[0:3,3])
+    left_twist = np.zeros(6)
+    left_twist[3:6] = middle_twist[3:6]
+    left_twist[0:3] = middle_twist[0:3] + np.cross( middle_twist[3:6], linalg.inv(joined_in_left)[0:3,3])
 
-    # right_twist = np.zeros(6)
-    # right_twist[3:6] = middle_twist[3:6]
-    # right_twist[0:3] = middle_twist[0:3] + np.cross( middle_twist[3:6], joined_in_right[0:3,3])
+    right_twist = np.zeros(6)
+    right_twist[3:6] = middle_twist[3:6]
+    right_twist[0:3] = middle_twist[0:3] + np.cross( middle_twist[3:6], linalg.inv(joined_in_right)[0:3,3])
     # left_twist = ad_left @ new_twist 
     # right_twist = ad_right @ new_twist
 
@@ -136,8 +138,12 @@ while not arrived:
     pn = nullspace_projection(jc)   # Nullspace projection matrix of the constraint Jacobian matrix
     qd_pn = pn @ qdotc              # Joint velocities in the nullspace of the constraint Jacobian matrix
 
+
+
+
+
     # Update the joint angles
-    pr2.q[16:23] = pr2.q[16:23] + qd_pn[7:14] * dt
+    pr2.q[16:23] = pr2.q[16:23] + qd_pn[7:14] * dt  
     pr2.q[23:30] = pr2.q[23:30] + qd_pn[0:7] * dt
 
     # Visualization of the frames
