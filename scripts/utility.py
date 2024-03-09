@@ -46,13 +46,10 @@ def angle_axis_python(T, Td):
             a = np.pi / 2 * (np.diag(R) + 1)
     else:
         # non-diagonal matrix case
-        # ln = base.norm(li)
-        # axis = 
-        # angle = np.arccos((np.trace(R) - 1) / 2)
         a = math.atan2(ln, np.trace(R) - 1) * li / ln
-
+        
     axis = li / ln
-    angle = np.arccos((np.trace(R) - 1) / 2)
+    angle = math.atan2(ln, np.trace(R) - 1)
 
     e[3:] = a
 
