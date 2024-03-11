@@ -1,83 +1,10 @@
 import numpy as np
 import roboticstoolbox as rtb
-import spatialmath.base as smb
-import spatialmath as sm
 import matplotlib.pyplot as plt
+import spatialmath as sm
 from scipy import linalg
 
-
-def add_frame_to_plot(ax, tf, label=''):
-    """
-    Adds a transformation frame to an existing 3D plot and returns the plotted objects.
-    
-    Parameters:
-    - ax: A matplotlib 3D axis object where the frame will be added.
-    - tf: 4x4 transformation matrix representing the frame's position and orientation.
-    - label: A string label to identify the frame.
-    
-    Returns:
-    - A list of matplotlib objects (quivers and text).
-    """
-    # Origin of the frame
-    origin = np.array(tf[0:3,3]).reshape(3, 1)
-
-    # Directions of the frame's axes, transformed by R
-    x_dir = tf[0:3,0:3] @ np.array([[1], [0], [0]])
-    y_dir = tf[0:3,0:3] @ np.array([[0], [1], [0]])
-    z_dir = tf[0:3,0:3] @ np.array([[0], [0], [1]])
-    
-    # Plotting each axis using quiver for direction visualization
-    quivers = []
-    quivers.append(ax.quiver(*origin, *x_dir, color='r', length=0.15, linewidth=1, normalize=True))
-    quivers.append(ax.quiver(*origin, *y_dir, color='g', length=0.15, linewidth=1, normalize=True))
-    quivers.append(ax.quiver(*origin, *z_dir, color='b', length=0.15, linewidth=1, normalize=True))
-    
-    # Optionally adding a label to the frame
-    text = None
-    if label:
-        text = ax.text(*origin.flatten(), label, fontsize=12)
-    
-    return quivers, text
-
-def animate_frame(tf, quivers, text, ax):
-
-    if quivers:
-        for q in quivers:
-            q.remove()
-    if text:
-        text.remove()
-
-    return add_frame_to_plot(ax, tf)
-
-def adjoint_transform(T):
-    """
-    Computes the adjoint transformation matrix of a given homogeneous transformation matrix for transforming twist to twist on a rigid body.
-    
-    Parameters:
-    - T: A 4x4 homogeneous transformation matrix.
-
-    Returns:
-    - A 6x6 adjoint transformation matrix.
-
-    """
-    R = T[0:3, 0:3]
-    p = T[0:3, 3]
-    p_hat = sm.base.skew(p)
-    A = np.zeros((6, 6))
-    A[0:3, 0:3] = R
-    A[3:6, 0:3] = p_hat @ R
-    A[3:6, 3:6] = R
-    return A
-
-def rmrc(jacob, twist, p_only = True):
-
-    """
-    Resolved motion rate control for a robot joint to reach a target configuration."""
-    if p_only:
-        joint_vel = np.linalg.pinv(jacob) @ np.transpose(twist[0:3])
-    else:
-        joint_vel = np.linalg.pinv(jacob) @ np.transpose(twist)
-    return joint_vel
+from utility import *
 
 # Initialize the left and right arms 
 left = rtb.models.DH.Planar3()
