@@ -1,28 +1,29 @@
+
 import roboticstoolbox as rtb
+from swift import Swift     
+
 import spatialgeometry as geometry
 import spatialmath.base as smb
 import spatialmath as sm
 import matplotlib.pyplot as plt
-from swift import Swift     
 
 import numpy as np
 from scipy import linalg
-from math import pi
-from copy import deepcopy
 
 from utility import *
 
-
+# Set up the PR2 robot and the environment
 pr2 = rtb.models.PR2()
 qtest = np.zeros(31)
-qtest[16:23] = [-pi/6,pi/6,-pi/3,-pi/2,0,-pi/4,pi/2]
-qtest[23:30] = [pi/6,pi/6,pi/3,-pi/2,0,-pi/4,pi/2]
+qtest[16:23] = [-np.pi/6,np.pi/6,-np.pi/3,-np.pi/2,0,-np.pi/4,np.pi/2]
+qtest[23:30] = [np.pi/6,np.pi/6,np.pi/3,-np.pi/2,0,-np.pi/4,np.pi/2]
 pr2.q = qtest
 
 env = Swift()
 env.set_camera_pose([1, 0, 1], [0,0,1])
 env.launch()
 
+# Set the initial pose of the end-effectors
 left_tip_pose = pr2.fkine(pr2.q, end=pr2.grippers[1], ).A 
 right_tip_pose = pr2.fkine(pr2.q, end=pr2.grippers[0], ).A
 l2r = linalg.inv(sm.SE3(left_tip_pose)) @ right_tip_pose
@@ -38,15 +39,9 @@ joined_in_left = linalg.inv(sm.SE3(left_tip_pose)) @ joined.A
 joined_in_right = linalg.inv(sm.SE3(right_tip_pose)) @ joined.A
 
 # Set the target pose 
-
-# Target pose with full twist motion
-# target = joined.A @ sm.SE3(0.0, -0.2, 0.1).A @ sm.SE3.RPY(0.1,0.1,0.1).A
-
-# Target pose for test case: Only angular motion
-target = joined.A @  sm.SE3.RPY(0.2,0,0).A
-
-# Target pose for the drift test case: Only linear motion
-# target = joined.A @ sm.SE3(0.1, -0.2, -0.1).A 
+target = joined.A @ sm.SE3(0.0, -0.2, 0.1).A @ sm.SE3.RPY(0.3,0.1,-0.2).A      # Target pose with full twist motion
+# target = joined.A @  sm.SE3.RPY(0.2,0,0).A      # Target pose for test case: Only angular motion
+# target = joined.A @ sm.SE3(0.1, -0.2, -0.1).A         # Target pose for the drift test case: Only linear motion
 
 target_ax = geometry.Axes(length=0.05, pose = target )
 
@@ -56,15 +51,13 @@ env.add(left_ax )
 env.add(right_ax )
 env.add(target_ax)
 
-
-
 df = list()
 dt_f = list()
-dt = 0.015
+dt = 0.01
 arrived = False    
 while not arrived:
 
-    middle_twist, angle, axis, arrived = rtb.p_servo(joined, 
+    middle_twist, arrived = rtb.p_servo(joined, 
                                         target, 
                                         gain = 0.05, 
                                         threshold=0.01, 
@@ -87,11 +80,11 @@ while not arrived:
     right_tip_pose = pr2.fkine(pr2.q, end=pr2.grippers[0], ).A
     right_twist, _, _ = angle_axis_python(right_tip_pose, righ_target)
 
-    jacob_l = pr2.jacob0(pr2.q, end=pr2.grippers[1], start="l_shoulder_pan_link")  # Jacobian of the left arm within the end-effector frame
-    jacob_r = pr2.jacob0(pr2.q, end=pr2.grippers[0], start="r_shoulder_pan_link")  # Jacobian of the right arm within the end-effector frame
+    left_jacobian = pr2.jacob0(pr2.q, end=pr2.grippers[1], start="l_shoulder_pan_link")  # Jacobian of the left arm within the end-effector frame
+    right_jacobian = pr2.jacob0(pr2.q, end=pr2.grippers[0], start="r_shoulder_pan_link")  # Jacobian of the right arm within the end-effector frame
 
-    qdot_left = rmrc(jacob_l, left_twist, p_only = False)
-    qdot_right = rmrc(jacob_r, right_twist,  p_only = False)
+    qdot_left = rmrc(left_jacobian, left_twist, p_only = False)
+    qdot_right = rmrc(right_jacobian, right_twist,  p_only = False)
     qdotc = np.concatenate([qdot_left, qdot_right], axis=0)                     # Concatenate joint velocities of both arms
 
     # Update the joint angles
@@ -108,7 +101,6 @@ while not arrived:
     dis = np.linalg.norm(updated_joined_left[0:3,3] - updated_joined_right[0:3,3])
     df.append(dis)
 
-    # tool_diff = np.linalg.norm(pr2.fkine(pr2.q, end=pr2.grippers[1],).A[0:3,3] - pr2.fkine(pr2.q, end=pr2.grippers[0],).A[0:3,3])
     tool_diff = np.linalg.norm((linalg.inv(sm.SE3(left_tip_pose)) @ right_tip_pose)[0:3,3])
     dt_f.append(tool_diff)
 
@@ -137,7 +129,6 @@ plt.xscale('linear')
 
 plt.show()
 env.hold()
-# env.
 
 
 
