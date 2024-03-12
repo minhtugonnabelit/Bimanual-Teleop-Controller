@@ -2,6 +2,7 @@ import numpy as np
 import spatialmath.base as smb
 import math
 import pygame
+import sys
 
 def joy_init():
 
@@ -23,7 +24,7 @@ def joy_init():
     
     return joystick
 
-def joy_to_twist(joy, gain):
+def joy_to_twist(joy, gain, done):
 
     r"""
 
@@ -38,6 +39,14 @@ def joy_to_twist(joy, gain):
 
     """
 
+    # done = False    
+
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            pygame.quit()
+            sys.exit()
+    if joy.get_button(0):
+        done = True
 
     vz = (joy.get_axis(2) + 1)/2 - (joy.get_axis(5) + 1)/2
     y = joy.get_button(1)*0.1 - joy.get_button(3)*0.1
@@ -54,7 +63,19 @@ def joy_to_twist(joy, gain):
     twist[:3] = np.array([vx, vy, vz]) * gain[0]
     twist[3:] = np.array([r, p, y]) * gain[1]
 
-    return twist
+    return twist, done
+
+def adjoint(T):
+
+    R = T[:3,:3]
+    p = T[:3, -1]
+
+    ad = np.eye(6,6)
+    ad[:3,:3] = R
+    ad[3:,3:] = R
+    ad[:3,3:] = np.cross(p,R)
+
+    return ad
 
 def manipulability(jacob):
 
