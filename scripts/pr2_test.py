@@ -2,6 +2,7 @@ import numpy as np
 import roboticstoolbox as rtb
 import matplotlib.pyplot as plt
 import spatialmath as sm
+import spatialmath.base as smb
 from scipy import linalg
 
 import rospy

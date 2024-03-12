@@ -69,6 +69,10 @@ df = list()
 dt_f = list()
 dt = 0.015
 
+w_l = list()
+w_r = list()
+
+
 updated_joined_left = left_tip_pose @ joined_in_left
 
 for target in traj:
@@ -90,14 +94,16 @@ for target in traj:
                              end=pr2.grippers[1],
                              start="l_shoulder_pan_link",  
                              tool=sm.SE3(joined_in_left))  # Jacobian of the left arm within the end-effector frame
+        w_l.append(manipulability(jacob_l))
         
         jacob_r = pr2.jacobe(pr2.q, 
                              end=pr2.grippers[0], 
                              start="r_shoulder_pan_link", 
                              tool=sm.SE3(joined_in_right))  # Jacobian of the right arm within the end-effector frame
+        w_r.append(manipulability(jacob_r))
         
         # Calculate the joint velocities using the Resolved Motion Rate Control (RMRC) method with the projection onto nullspace of Constraint Jacobian
-        qdot_l, qdot_r = duo_arm_qdot_constraint(jacob_l, jacob_r, middle_twist,)
+        qdot_l, qdot_r = duo_arm_qdot_constraint(jacob_l, jacob_r, middle_twist)
 
         # ---------------------------------------------------------------------------#
         # SECTION TO UPDATE VISUALIZATION AND RECORD THE NECESSARY DATA
@@ -125,6 +131,14 @@ plt.plot(df, 'k', linewidth=1)
 plt.title('Drift graph')
 plt.xlabel('Time')
 plt.ylabel('Distance')
+
+plt.figure(2)
+plt.plot(w_l, 'r', linewidth=1)
+plt.plot(w_r, 'b', linewidth=1)
+plt.title('Manipulability graph')
+plt.xlabel('Time')
+plt.ylabel('Manipulability')
+plt.legend(['Left arm', 'Right arm'])
 
 plt.show()
 env.hold()

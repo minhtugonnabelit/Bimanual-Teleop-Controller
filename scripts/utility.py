@@ -10,7 +10,7 @@ def joy_init():
 
     Returns:
     - The joystick object.
-    
+
     """
     
     pygame.init()
@@ -43,8 +43,8 @@ def joy_to_twist(joy, gain):
     y = joy.get_button(1)*0.1 - joy.get_button(3)*0.1
 
     #Low pass filter
-    vy = -joy.get_axis(0) if abs(joy.get_axis(0)) > 0.1 else 0
-    vx = -joy.get_axis(1) if abs(joy.get_axis(1)) > 0.1 else 0
+    vy = joy.get_axis(0) if abs(joy.get_axis(0)) > 0.1 else 0
+    vx = joy.get_axis(1) if abs(joy.get_axis(1)) > 0.1 else 0
     r = joy.get_axis(3) if abs(joy.get_axis(3)) > 0.1 else 0
     p = joy.get_axis(4) if abs(joy.get_axis(4)) > 0.1 else 0
     
@@ -55,6 +55,21 @@ def joy_to_twist(joy, gain):
     twist[3:] = np.array([r, p, y]) * gain[1]
 
     return twist
+
+def manipulability(jacob):
+
+    r"""
+    Calculate the manipulability of the robot.
+
+    Parameters:
+    - jacob: The Jacobian matrix of the robot.
+
+    Returns:
+    - The manipulability of the robot.
+
+    """
+
+    return np.sqrt(np.linalg.det(jacob @ np.transpose(jacob)))
 
 def rmrc(jacob, twist):
 
@@ -74,7 +89,7 @@ def rmrc(jacob, twist):
     w = np.sqrt(np.linalg.det(jacob @ np.transpose(jacob)))
 
     # set threshold and damping
-    w_thresh = 0.1
+    w_thresh = 0.08
     max_damp = 0.5
 
 

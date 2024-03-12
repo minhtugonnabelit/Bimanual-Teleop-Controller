@@ -42,12 +42,14 @@ env.add(pr2)
 env.add(left_ax)
 env.add(right_ax)
 
+w_l = list()
+w_r = list()
 df = list()
 dt = 0.015
 
 joy = joy_init()
-LIN_G = 0.05
-ANG_G = 0.05
+LIN_G = 0.02
+ANG_G = 0.02
 
 while True:
 
@@ -66,19 +68,13 @@ while True:
 
     # ---------------------------------------------------------------------------#
     # SECTION TO PERFORMS TWIST TRANSFORMATION IN A RIGID BODY MOTION
-    jacob_l = pr2.jacobe(pr2.q,
-                            end=pr2.grippers[1],
-                            start="l_shoulder_pan_link",  
-                            tool=sm.SE3(joined_in_left))  # Jacobian of the left arm within tool frame
-    
-    jacob_r = pr2.jacobe(pr2.q, 
-                            end=pr2.grippers[0], 
-                            start="r_shoulder_pan_link", 
-                            tool=sm.SE3(joined_in_right))  # Jacobian of the right arm within tool frame
+    jacob_l = pr2.jacobe(pr2.q, end=pr2.grippers[1], start="l_shoulder_pan_link", tool=sm.SE3(joined_in_left))  # Jacobian of the left arm within tool frame
+    jacob_r = pr2.jacobe(pr2.q, end=pr2.grippers[0], start="r_shoulder_pan_link", tool=sm.SE3(joined_in_right))  # Jacobian of the right arm within tool frame
+    w_l.append(manipulability(jacob_l))
+    w_r.append(manipulability(jacob_r))
     
     # Calculate the joint velocities using the Resolved Motion Rate Control (RMRC) method with the projection onto nullspace of Constraint Jacobian
-    qdot_l, qdot_r = duo_arm_qdot_constraint(jacob_l, jacob_r, twist,)
-
+    qdot_l, qdot_r = duo_arm_qdot_constraint(jacob_l, jacob_r, twist)
 
     # ---------------------------------------------------------------------------#
     # SECTION TO UPDATE VISUALIZATION AND RECORD THE NECESSARY DATA
@@ -106,6 +102,15 @@ plt.plot(df, 'k', linewidth=1)
 plt.title('Drift graph')
 plt.xlabel('Time')
 plt.ylabel('Distance')
+
+plt.figure(2)
+plt.plot(w_l, 'r', linewidth=1)
+plt.plot(w_r, 'b', linewidth=1)
+plt.title('Manipulability graph')
+plt.xlabel('Time')
+plt.ylabel('Manipulability')
+plt.legend(['Left arm', 'Right arm'])
+
 
 plt.show()
 # env.hold()
