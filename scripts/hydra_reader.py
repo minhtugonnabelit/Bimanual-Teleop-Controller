@@ -40,7 +40,7 @@ class HydraTwist():
 
 
     def _joy_callback(self, msg):
-        """
+        r"""
         Callback function for the joy topic.\n
         The callback function is called everytime a message is published to the joy topic.\n
         The callback function is used to set the gain of the linear and angular velocities of the twist message.\n
@@ -66,7 +66,7 @@ class HydraTwist():
             self._switch_arms()
 
     def _switch_arms(self):
-        """
+        r"""
         Switch the arms that will be controlled by the hydra.\n
         The arms are switched by pressing the left trigger of the hydra joystick.\n
         The arms are switched by changing the topic of the current twist publisher.\n
@@ -82,7 +82,7 @@ class HydraTwist():
 
 
     def _twist_to_twist_stamped_msg(self, controller_frame_id, base_frame_id, lin_gain, ang_gain, time_diff=0.1):
-        """
+        r"""
         Get the twist of the hydra right pivot in the hydra base frame.\n
         The twist is computed as the difference between the current pose and the previous pose divided by the time difference.\n
         

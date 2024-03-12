@@ -21,7 +21,8 @@ path = rtb.ctraj(sm.SE3(axis_tail), sm.SE3(axis_head), 15)
 a = axis_head - axis_tail
 a = a / np.linalg.norm(a)
 
-R = np.eye(3) + math.sin(alpha) * smb.skew(a) + (1 - math.cos(alpha)) * smb.skew(a) @ smb.skew(a)  # Rodrigues' formula    
+# R = np.eye(3) + math.sin(alpha) * smb.skew(a) + (1 - math.cos(alpha)) * smb.skew(a) @ smb.skew(a)  # Rodrigues' formula   
+R = smb.rodrigues(a, alpha) 
 RT = np.eye(4)
 RT[:3,:3]= R
 
@@ -31,7 +32,6 @@ target_dot = np.linalg.inv(T_dot) @ target.A
 target_dot_new = RT @ target_dot
 
 target_new = T_dot @ target_dot_new
-# target_new = sm.SE3(target_new)
 target_new_ax = gm.Axes(length=0.1, pose=target_new)
 
 env = Swift()

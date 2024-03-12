@@ -1,8 +1,62 @@
 import numpy as np
 import spatialmath.base as smb
 import math
+import pygame
 
-def rmrc(jacob, twist, p_only = True):
+def joy_init():
+
+    r"""
+    Initialize the pygame library and joystick.
+
+    Returns:
+    - The joystick object.
+    
+    """
+    
+    pygame.init()
+    joystick_count = pygame.joystick.get_count()
+    if joystick_count == 0:
+        raise Exception('No joystick found')
+    else:
+        joystick = pygame.joystick.Joystick(0)
+        joystick.init()
+    
+    return joystick
+
+def joy_to_twist(joy, gain):
+
+    r"""
+
+    Convert the joystick data to a twist message.
+
+    Parameters:
+    - joy: The joystick object.
+    - gain: The gain of the linear and angular velocities.
+
+    Returns:
+    - The twist message.
+
+    """
+
+
+    vz = (joy.get_axis(2) + 1)/2 - (joy.get_axis(5) + 1)/2
+    y = joy.get_button(1)*0.1 - joy.get_button(3)*0.1
+
+    #Low pass filter
+    vy = -joy.get_axis(0) if abs(joy.get_axis(0)) > 0.1 else 0
+    vx = -joy.get_axis(1) if abs(joy.get_axis(1)) > 0.1 else 0
+    r = joy.get_axis(3) if abs(joy.get_axis(3)) > 0.1 else 0
+    p = joy.get_axis(4) if abs(joy.get_axis(4)) > 0.1 else 0
+    
+    
+    # ---------------------------------------------------------------------------#
+    twist = np.zeros(6)
+    twist[:3] = np.array([vx, vy, vz]) * gain[0]
+    twist[3:] = np.array([r, p, y]) * gain[1]
+
+    return twist
+
+def rmrc(jacob, twist):
 
     r"""
     Calculate the joint velocities using the Resolved Motion Rate Control (RMRC) method.
@@ -10,7 +64,6 @@ def rmrc(jacob, twist, p_only = True):
     Parameters:
     - jacob: The Jacobian matrix of the robot.
     - twist: The desired twist of the robot.
-    - p_only: A boolean to indicate if the RMRC method should be used for position only.
 
     Returns:
     - The joint velocities of the robot.
@@ -54,6 +107,25 @@ def nullspace_projection(jacob):
     return np.eye(jacob.shape[1]) - np.linalg.pinv(jacob) @ jacob
 
 
+def duo_arm_qdot_constraint(jacob_l, jacob_r, twist,):
+
+    r"""
+    Calculate the joint velocities using the Resolved Motion Rate Control (RMRC) method for a dual-arm robot.
+    The Jacobian of the left and right arms are used to calculate the joint velocities that need to be presented on the same frame
+    """
+
+    jacob_c = np.concatenate([jacob_l, -jacob_r], axis=1)    
+    qdot_left = rmrc(jacob_l, twist, )
+    qdot_right = rmrc(jacob_r, twist, )
+    qdotc = np.concatenate([qdot_left, qdot_right], axis=0)
+    qdotc = nullspace_projection(jacob_c) @ qdotc
+
+    qdot_l = qdotc[0:jacob_l.shape[1]]
+    qdot_r = qdotc[jacob_l.shape[1]:]
+
+    return qdot_l, qdot_r
+
+
 def angle_axis_python(T, Td):
 
     r"""
@@ -91,6 +163,7 @@ def angle_axis_python(T, Td):
     e[3:] = a
 
     return e, angle, axis
+
 
 # Function for visualiztion of the frames in the 3D plot using Matplotlib
 def add_frame_to_plot(ax, tf, label=''):

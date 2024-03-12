@@ -49,9 +49,9 @@ previous_text_joined = None
 add_frame_to_plot(ax, joined.A)
 add_frame_to_plot(ax, target1.A)
 
-# #for pose in traj1:
-adjoint_left = adjoint_transform(joined_in_left)
-adjoint_right = adjoint_transform(joined_in_right)
+# # #for pose in traj1:
+# adjoint_left = adjoint_transform(joined_in_left)
+# adjoint_right = adjoint_transform(joined_in_right)
 
 arrived = False    
 while not arrived:
@@ -79,16 +79,22 @@ while not arrived:
     # previous_quivers_right, previous_text_right = animate_frame(updated_joined_right, previous_quivers_right, previous_text_right, ax)
 
 
-    jacob_l = left.jacobe(left.q)
-    left_twist = adjoint_left @ middle_twist
-    qdot_left = rmrc(jacob_l, left_twist, p_only = False)
+    jacob_l = left.jacobe(left.q, tool = sm.SE3(joined_in_left))
+    qdot_left = rmrc(jacob_l, middle_twist,)
 
-    # jacob_r = right.jacobe(right.q)[0:3,:]
-    # right_twist = adjoint_right @ middle_twists
-    # qdot_right = rmrc(jacob_r, right_twist)
+    jacob_r = right.jacobe(right.q, tool = sm.SE3(joined_in_right))
+    qdot_right = rmrc(jacob_r, middle_twist,)
+
+    qc = np.concatenate([qdot_left, qdot_right], axis=0)
+    jc = np.concatenate([jacob_l, -jacob_r], axis=1)
+
+    qc = nullspace_projection(jc) @ qc
+    qdot_left = qc[0:qc.shape[0]//2]
+    qdot_right = qc[qc.shape[0]//2:qc.shape[0]]
+
 
     left.q = left.q + qdot_left
-    # right.q = right.q + qdot_right 
+    right.q = right.q + qdot_right 
 
     fig.step(0.1)
 
