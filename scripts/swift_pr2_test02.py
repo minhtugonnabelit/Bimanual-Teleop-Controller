@@ -1,5 +1,4 @@
 import numpy as np
-import sys
 from scipy import linalg
 
 import spatialmath as sm
@@ -31,12 +30,11 @@ left_ax = geometry.Axes(length=0.05, pose=left_tip_pose)
 right_ax = geometry.Axes(length=0.05, pose=right_tip_pose)
 
 # Extract the middle point between the two tools
-joined = sm.SE3()
-joined.A[0:3, 3] = (left_tip_pose[0:3, 3] + right_tip_pose[0:3, 3]) / 2
-joined.A[0:3, 0:3] = np.eye(3)
-joined_ax = geometry.Axes(length=0.05, pose=joined.A)
-joined_in_left = linalg.inv(sm.SE3(left_tip_pose)) @ joined.A
-joined_in_right = linalg.inv(sm.SE3(right_tip_pose)) @ joined.A
+joined = np.eye(4,4)
+joined[0:3, 3] = (left_tip_pose[0:3, 3] + right_tip_pose[0:3, 3]) / 2
+joined_ax = geometry.Axes(length=0.05, pose=joined)
+joined_in_left = linalg.inv(sm.SE3(left_tip_pose)) @ joined
+joined_in_right = linalg.inv(sm.SE3(right_tip_pose)) @ joined
 
 env.add(pr2)
 env.add(left_ax)
@@ -51,25 +49,26 @@ joy = joy_init()
 LIN_G = 0.02
 ANG_G = 0.02
 
-while True:
+done  = False
+
+while not done:
 
     # ---------------------------------------------------------------------------#
     # SECTION TO HANDLE THE JOYSTICK INPUT
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            pygame.quit()
-            sys.exit()
-
-    if joy.get_button(0):
-        break
-
-    twist = joy_to_twist(joy, [LIN_G, ANG_G])
+    # for event in pygame.event.get():
+    #     if event.type == pygame.QUIT:
+    #         pygame.quit()
+    #         sys.exit()
+    # if joy.get_button(0):
+    #     break
+    twist, done = joy_to_twist(joy, [LIN_G, ANG_G], done)
 
 
     # ---------------------------------------------------------------------------#
     # SECTION TO PERFORMS TWIST TRANSFORMATION IN A RIGID BODY MOTION
     jacob_l = pr2.jacobe(pr2.q, end=pr2.grippers[1], start="l_shoulder_pan_link", tool=sm.SE3(joined_in_left))  # Jacobian of the left arm within tool frame
     jacob_r = pr2.jacobe(pr2.q, end=pr2.grippers[0], start="r_shoulder_pan_link", tool=sm.SE3(joined_in_right))  # Jacobian of the right arm within tool frame
+
     w_l.append(manipulability(jacob_l))
     w_r.append(manipulability(jacob_r))
     
@@ -90,7 +89,7 @@ while True:
     right_ax.T = updated_joined_right
 
     # Record the distance between offset frames of each arm to  observe the drift of tracked frame
-    dis = np.linalg.norm( updated_joined_left[0:3, 3] - updated_joined_right[0:3, 3])
+    dis = np.linalg.norm(updated_joined_left[0:3, 3] - updated_joined_right[0:3, 3])
     df.append(dis)
 
     env.step()
@@ -111,6 +110,13 @@ plt.xlabel('Time')
 plt.ylabel('Manipulability')
 plt.legend(['Left arm', 'Right arm'])
 
+plt.figure(3)
+plt.plot(np.diff(w_l), 'r', linewidth=1)
+plt.plot(np.diff(w_r), 'b', linewidth=1)
+plt.title('Manipulability differential graph')
+plt.xlabel('Time')
+plt.ylabel('Manipulability rate')
+plt.legend(['Left arm', 'Right arm'])
 
 plt.show()
 # env.hold()

@@ -140,8 +140,17 @@ plt.xlabel('Time')
 plt.ylabel('Manipulability')
 plt.legend(['Left arm', 'Right arm'])
 
+plt.figure(3)
+plt.plot(np.diff(w_l), 'r', linewidth=1)
+plt.plot(np.diff(w_r), 'b', linewidth=1)
+plt.title('Manipulability differential graph')
+plt.xlabel('Time')
+plt.ylabel('Manipulability rate')
+plt.legend(['Left arm', 'Right arm'])
+
+
 plt.show()
-env.hold()
+# env.hold()
 
 
 # # Update the virtual joined frame with the twist
