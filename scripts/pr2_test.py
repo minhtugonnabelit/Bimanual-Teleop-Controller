@@ -16,7 +16,7 @@ class PR2():
 
     def __init__(self) -> None:
         
-        pass
+        passcd 
 
     def _joy_callback(self, msg):
 
@@ -34,6 +34,7 @@ class PR2():
 
         pass
 
+smb.trexp()
 
 if __name__ == "__main__":
     pr2 = PR2()
