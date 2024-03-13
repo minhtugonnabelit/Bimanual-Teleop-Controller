@@ -54,8 +54,8 @@ def joy_to_twist(joy, gain, done):
     #Low pass filter
     vy = joy.get_axis(0) if abs(joy.get_axis(0)) > 0.1 else 0
     vx = joy.get_axis(1) if abs(joy.get_axis(1)) > 0.1 else 0
-    r = joy.get_axis(3) if abs(joy.get_axis(3)) > 0.1 else 0
-    p = joy.get_axis(4) if abs(joy.get_axis(4)) > 0.1 else 0
+    r = joy.get_axis(3) if abs(joy.get_axis(3)) > 0.8 else 0
+    p = joy.get_axis(4) if abs(joy.get_axis(4)) > 0. else 0
     
     
     # ---------------------------------------------------------------------------#
@@ -143,7 +143,7 @@ def nullspace_projection(jacob):
     return np.eye(jacob.shape[1]) - np.linalg.pinv(jacob) @ jacob
 
 
-def duo_arm_qdot_constraint(jacob_l, jacob_r, twist,):
+def duo_arm_qdot_constraint(jacob_l, jacob_r, twist, activate_nullspace=True):
 
     r"""
     Calculate the joint velocities using the Resolved Motion Rate Control (RMRC) method for a dual-arm robot.
@@ -154,7 +154,9 @@ def duo_arm_qdot_constraint(jacob_l, jacob_r, twist,):
     qdot_left = rmrc(jacob_l, twist, )
     qdot_right = rmrc(jacob_r, twist, )
     qdotc = np.concatenate([qdot_left, qdot_right], axis=0)
-    qdotc = nullspace_projection(jacob_c) @ qdotc
+
+    if activate_nullspace:
+        qdotc = nullspace_projection(jacob_c) @ qdotc
 
     qdot_l = qdotc[0:jacob_l.shape[1]]
     qdot_r = qdotc[jacob_l.shape[1]:]

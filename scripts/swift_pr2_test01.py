@@ -41,22 +41,24 @@ joined_in_right = linalg.inv(sm.SE3(right_tip_pose)) @ joined.A
 
 
 # Target pose with full twist motion
-target = joined.A @ sm.SE3(0.1, 0.1, 0.1).A @ sm.SE3.RPY(0.3, 0.1, 0.1).A
-target1 = joined.A @ sm.SE3(0.0, 0.2, 0.1).A @ sm.SE3.RPY(0.1, 0.3, 0.1).A
-target2 = joined.A @ sm.SE3(0.1, -0.1, 0.1).A @ sm.SE3.RPY(0.0, 0.1, 0.2).A
-target3 = joined.A @ sm.SE3(-0.1, 0.0, -0.1).A @ sm.SE3.RPY(0.3, 0.1, 0.1).A
-
-traj = list()
-traj.append(target)
-traj.append(target1)
-traj.append(target2)
-traj.append(target3)
+# target = joined.A @ sm.SE3(0.1, 0.1, 0.1).A @ sm.SE3.RPY(0.3, 0.1, 0.1).A
+# target1 = joined.A @ sm.SE3(0.0, 0.2, 0.1).A @ sm.SE3.RPY(0.1, 0.3, 0.1).A
+# target2 = joined.A @ sm.SE3(0.1, -0.1, 0.1).A @ sm.SE3.RPY(0.0, 0.1, 0.2).A
+# target3 = joined.A @ sm.SE3(-0.1, 0.0, -0.1).A @ sm.SE3.RPY(0.3, 0.1, 0.1).A
 
 # Target pose for test case: Only angular motion
-# target = joined.A @  sm.SE3.RPY(0.2,0,0).A
+target = joined.A @  sm.SE3(0.2, 0.15, 0.1).A @ sm.SE3.RPY(0.3, 0.1, 0.1).A
 
 # Target pose for the drift test case: Only linear motion
 # target = joined.A @ sm.SE3(0.1, -0.2, -0.1).A
+
+traj = list()
+traj.append(target)
+# traj.append(target1)
+# traj.append(target2)
+# traj.append(target3)
+
+
 
 env.add(pr2)
 env.add(left_ax)
@@ -103,7 +105,7 @@ for target in traj:
         w_r.append(manipulability(jacob_r))
         
         # Calculate the joint velocities using the Resolved Motion Rate Control (RMRC) method with the projection onto nullspace of Constraint Jacobian
-        qdot_l, qdot_r = duo_arm_qdot_constraint(jacob_l, jacob_r, middle_twist)
+        qdot_l, qdot_r = duo_arm_qdot_constraint(jacob_l, jacob_r, middle_twist, activate_nullspace=True)
 
         # ---------------------------------------------------------------------------#
         # SECTION TO UPDATE VISUALIZATION AND RECORD THE NECESSARY DATA
