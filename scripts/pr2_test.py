@@ -12,11 +12,12 @@ from tf2_geometry_msgs import PoseStamped
 
 from utility import *
 
+
 class PR2():
 
     def __init__(self) -> None:
         
-        passcd 
+        pass 
 
     def _joy_callback(self, msg):
 
