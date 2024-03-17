@@ -55,7 +55,7 @@ def joy_to_twist(joy, gain, done):
     vy = joy.get_axis(0) if abs(joy.get_axis(0)) > 0.1 else 0
     vx = joy.get_axis(1) if abs(joy.get_axis(1)) > 0.1 else 0
     r = joy.get_axis(3) if abs(joy.get_axis(3)) > 0.8 else 0
-    p = joy.get_axis(4) if abs(joy.get_axis(4)) > 0. else 0
+    p = joy.get_axis(4) if abs(joy.get_axis(4)) > 0.8 else 0
     
     
     # ---------------------------------------------------------------------------#
