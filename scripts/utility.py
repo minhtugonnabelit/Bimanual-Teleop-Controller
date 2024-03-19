@@ -28,7 +28,7 @@ def joy_to_twist(joy, gain, done):
 
     r"""
 
-    Convert the joystick data to a twist message.
+    Convert the joystick data to a twist message using Pygame module.
 
     Parameters:
     - joy: The joystick object.
