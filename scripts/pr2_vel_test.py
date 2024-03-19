@@ -28,7 +28,7 @@ class PR2VelControl():
     def command_to_mg(self,  values: list,):
 
         msg = Float64MultiArray()
-        msg.data = values if len(values) == 14 else np.zeros(14)
+        msg.data = values 
 
         return msg
     
@@ -36,28 +36,31 @@ class PR2VelControl():
         
         rospy.wait_for_message('/joy', Joy)
 
-        V = 0.5
+        V = 0.6
+        qdot = np.zeros(14)
 
         while not rospy.is_shutdown():
             
-            trigger = self._joy[1][4]
+                
             dir = self._joy[0][1] / np.abs(self._joy[0][1]) if np.abs(self._joy[0][1]) > 0.1 else 0
+            if self._joy[1][4]:
 
-            qdot = [
-                V * dir * self._joy[1][0],
-                V * dir * self._joy[1][1],
-                V * dir * self._joy[1][2],
-                V * dir * self._joy[1][3],
-                V * dir * self._joy[1][5],
-                V * dir * self._joy[1][6],
-                V * dir * self._joy[1][7],
-            ]
-            
-            for _ in range(7):
-                qdot.append(0) 
+                for i in range(7):
+                    qdot[i+7] = V * dir * self._joy[1][i]
 
-            qdot = trigger * qdot
-            self._pub.publish(self.command_to_mg(qdot) )
+                # qdot[7] = V*dir*self._joy[1][0]
+
+            if self._joy[1][5]:
+
+
+                for i in range(7):
+                    qdot[i] = V * dir * self._joy[1][i]
+
+            if not (self._joy[1][4] + self._joy[1][5]): qdot = np.zeros(14)
+
+            msg = self.command_to_mg(qdot) 
+            self._pub.publish(msg)
+
             self.rate.sleep()
 
 
