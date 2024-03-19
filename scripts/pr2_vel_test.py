@@ -25,14 +25,14 @@ class PR2VelControl():
     def _joy_callback(self, msg: Joy):
         self._joy = (msg.axes, msg.buttons)
     
-    def command_to_mg(self,  values: list,):
+    def _command_to_mg(self,  values: list,):
 
         msg = Float64MultiArray()
         msg.data = values if len(values) == 14 else np.zeros(14)
 
         return msg
     
-    def _joy_to_joint_velocities(self):
+    def joy_to_qdot(self):
         
         rospy.wait_for_message('/joy', Joy)
 
@@ -57,11 +57,11 @@ class PR2VelControl():
                 qdot.append(0) 
 
             qdot = trigger * qdot
-            self._pub.publish(self.command_to_mg(qdot) )
+            self._pub.publish(self._command_to_mg(qdot) )
             self.rate.sleep()
 
 
 if __name__ == '__main__':
     rospy.init_node('pr2_vel_control')
     pr2 = PR2VelControl()
-    pr2._joy_to_joint_velocities()
+    pr2.joy_to_qdot()
