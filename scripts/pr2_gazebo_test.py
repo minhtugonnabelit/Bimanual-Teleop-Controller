@@ -71,6 +71,10 @@ class PR2BiCoor:
 
     def set_kinematics_constraints(self):
 
+        r"""
+        
+        """
+
         left_pose = self._tf_listener.lookupTransform('l_gripper_tool_frame', 'base_link', rospy.Time(0))
         left_pose = self.posestamped_to_SE3(left_pose[0], left_pose[1])
         right_pose = self._tf_listener.lookupTransform('r_gripper_tool_frame', 'base_link', rospy.Time(0))
