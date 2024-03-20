@@ -21,7 +21,7 @@ LEFT_SAMPLE_JOINTSTATES = [np.pi/6,
                            np.pi/2]
 
 # LEFT_SAMPLE_JOINTSTATES = [0, 0, 0, 0, 0, 0, np.pi]
-#
+
 RIGHT_SAMPLE_JOINTSTATES = [-np.pi/6,
                             np.pi/6,
                             -np.pi/3,
@@ -115,12 +115,12 @@ class PR2BiCoor:
         """
 
         left_pose = self._tf_listener.lookupTransform(
-            'base_link', 'l_gripper_tool_frame', rospy.Time(0))
+            'base_footprint', 'l_gripper_tool_frame', rospy.Time(0))
         left_pose = tf.TransformerROS.fromTranslationRotation(
             tf.TransformerROS, translation=left_pose[0], rotation=left_pose[1])
 
         right_pose = self._tf_listener.lookupTransform(
-            'base_link', 'r_gripper_tool_frame', rospy.Time(0))
+            'base_footprint', 'r_gripper_tool_frame', rospy.Time(0))
         right_pose = tf.TransformerROS.fromTranslationRotation(
             tf.TransformerROS, translation=right_pose[0], rotation=right_pose[1])
 
@@ -224,8 +224,7 @@ class PR2BiCoor:
                 qdot = np.concatenate([qdot_r, qdot_l])
                 msg = self.joint_group_command_to_msg(qdot)
                 self._joint_group_vel_pub.publish(msg)
-                # self.send_command('left', qdot_l)
-                # self.send_command('right', qdot_r)
+
 
             self._rate.sleep()
 

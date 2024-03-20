@@ -4,8 +4,8 @@ import spatialgeometry as geometry
 import roboticstoolbox as rtb
 from scipy import linalg
 from swift import Swift
-import threading
 
+import threading
 
 class FakePR2:
 
@@ -32,6 +32,7 @@ class FakePR2:
         Timeline function to update the visualization
         :return: None
         """
+        self._env.launch()
         while not self._is_collapsed:
             self._env.step(0.1)
 
@@ -93,7 +94,6 @@ class FakePR2:
 
         self._env = Swift()
         self._env.set_camera_pose([1, 0, 1], [0, 0.5, 1])
-        self._env.launch()
 
         if not self._constraints_is_set:    # If the constraints are not set, then visualize the virtual frame from each arm end-effector
             self._left_ax = geometry.Axes(length=0.05, pose=self._robot.fkine(
@@ -114,7 +114,7 @@ class FakePR2:
 
     def get_jacobian(self, side):
         r"""
-        Get the Jacobian of the robot
+        Get the Jacobian of the robot on the tool frame
         :param side: side of the robot
 
         :return: Jacobian
