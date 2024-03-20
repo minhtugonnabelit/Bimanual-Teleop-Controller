@@ -111,7 +111,7 @@ class PR2BiCoor:
     def set_kinematics_constraints(self):
         r"""
         Set the kinematics constraints for the robot
-        :return: None
+        :return: Boolean value indicating if the constraints are set
         """
 
         left_pose = self._tf_listener.lookupTransform(
@@ -212,18 +212,20 @@ class PR2BiCoor:
             if  (self._joy_msg[1][4] * self._joy_msg[1][5]) and not self._constraint_is_set:
                 self._constraint_is_set = self.set_kinematics_constraints()
 
-            if self._constraint_is_set:
+            if self._constraint_is_set: # If the constraints are set, then perform the control loop for bi-manipulation
 
-                twist, done = joy_to_twist(self._joy_msg, [0.1, 0.1])
-                jacob_left = self._robot.get_jacobian('left')
-                jacob_right = self._robot.get_jacobian('right')
+                if self._joy_msg[1][5]: # Safety trigger
 
-                qdot_l, qdot_r = duo_arm_qdot_constraint(
-                    jacob_left, jacob_right, twist, activate_nullspace=True)
+                    twist, done = joy_to_twist(self._joy_msg, [0.1, 0.1])
+                    jacob_left = self._robot.get_jacobian('left')
+                    jacob_right = self._robot.get_jacobian('right')
 
-                qdot = np.concatenate([qdot_r, qdot_l])
-                msg = self.joint_group_command_to_msg(qdot)
-                self._joint_group_vel_pub.publish(msg)
+                    qdot_l, qdot_r = duo_arm_qdot_constraint(
+                        jacob_left, jacob_right, twist, activate_nullspace=True)
+
+                    qdot = np.concatenate([qdot_r, qdot_l])
+                    msg = self.joint_group_command_to_msg(qdot)
+                    self._joint_group_vel_pub.publish(msg)
 
 
             self._rate.sleep()
