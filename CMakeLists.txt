@@ -161,9 +161,9 @@ include_directories(
 ## in contrast to setup.py, you can choose the destination
 catkin_install_python(PROGRAMS
   scripts/hydra_reader.py
-  # scripts/pr2_gazebo_test.py
-  # scripts/utility.py
-  # scripts/fakePR2.py
+  scripts/pr2_gazebo_test.py
+  scripts/pr2_gazebo_vel_single_joint.py
+  scripts/utility.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

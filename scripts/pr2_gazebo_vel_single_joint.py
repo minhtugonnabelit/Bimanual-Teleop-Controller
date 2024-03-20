@@ -6,7 +6,7 @@ from std_msgs.msg import Float64MultiArray
 from sensor_msgs.msg import JointState, Joy
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
-from fakePR2 import FakePR2
+# from fakePR2 import FakePR2
 from utility import *
 
 LEFT_SAMPLE_JOINTSTATES = [np.pi/6,

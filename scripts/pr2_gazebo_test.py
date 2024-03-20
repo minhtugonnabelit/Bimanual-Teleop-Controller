@@ -3,7 +3,7 @@ from enum import Enum
 
 # Import custom utility functions
 from utility import *
-from fakePR2 import FakePR2
+# from fakePR2 import FakePR2
 
 import rospy
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
