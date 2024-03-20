@@ -24,7 +24,7 @@ def joy_init():
     
     return joystick
 
-def joy_to_twist(joy, gain, done):
+def joy_to_twist(joy, gain):
 
     r"""
 
@@ -38,24 +38,41 @@ def joy_to_twist(joy, gain, done):
     - The twist message.
 
     """
+    vx, vy, vz, r, p, y = 0, 0, 0, 0, 0, 0
+    done = False
 
-    # done = False    
+    if isinstance(joy, pygame.joystick.JoystickType):
 
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            pygame.quit()
-            sys.exit()
-    if joy.get_button(0):
-        done = True
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+        if joy.get_button(0):
+            done = True
 
-    vz = (joy.get_axis(2) + 1)/2 - (joy.get_axis(5) + 1)/2
-    y = joy.get_button(1)*0.1 - joy.get_button(3)*0.1
+        vz = (joy.get_axis(2) + 1)/2 - (joy.get_axis(5) + 1)/2
+        y = joy.get_button(1)*0.1 - joy.get_button(3)*0.1
 
-    #Low pass filter
-    vy = joy.get_axis(0) if abs(joy.get_axis(0)) > 0.1 else 0
-    vx = joy.get_axis(1) if abs(joy.get_axis(1)) > 0.1 else 0
-    r = joy.get_axis(3) if abs(joy.get_axis(3)) > 0.8 else 0
-    p = joy.get_axis(4) if abs(joy.get_axis(4)) > 0.8 else 0
+        #Low pass filter
+        vy = joy.get_axis(0) if abs(joy.get_axis(0)) > 0.1 else 0
+        vx = joy.get_axis(1) if abs(joy.get_axis(1)) > 0.1 else 0
+        r = joy.get_axis(3) if abs(joy.get_axis(3)) > 0.2 else 0
+        p = joy.get_axis(4) if abs(joy.get_axis(4)) > 0.2 else 0
+
+    else: 
+        
+        if joy[1][-3]:
+            done = True
+
+        vz = (joy[0][5] + 1)/2 - (joy[0][2] + 1)/2
+        y = joy[1][4]*0.1 - joy[1][5]*0.1
+
+        #Low pass filter
+        vy = joy[0][0] if abs(joy[0][0]) > 0.1 else 0
+        vx = joy[0][1] if abs(joy[0][1]) > 0.1 else 0
+        r = joy[0][3] if abs(joy[0][3]) > 0.2 else 0
+        p = joy[0][4] if abs(joy[0][4]) > 0.2 else 0
+
     
     
     # ---------------------------------------------------------------------------#
@@ -150,10 +167,10 @@ def duo_arm_qdot_constraint(jacob_l, jacob_r, twist, activate_nullspace=True):
     The Jacobian of the left and right arms are used to calculate the joint velocities that need to be presented on the same frame
     """
 
-    jacob_c = np.concatenate([jacob_l, -jacob_r], axis=1)    
     qdot_left = rmrc(jacob_l, twist, )
     qdot_right = rmrc(jacob_r, twist, )
-    qdotc = np.concatenate([qdot_left, qdot_right], axis=0)
+    qdotc = np.concatenate([qdot_left, qdot_right], axis=0)     # Combine the joint velocities of the left and right arms
+    jacob_c = np.concatenate([jacob_l, -jacob_r], axis=1)    # Combine the Jacobians of the left and right arms
 
     if activate_nullspace:
         qdotc = nullspace_projection(jacob_c) @ qdotc

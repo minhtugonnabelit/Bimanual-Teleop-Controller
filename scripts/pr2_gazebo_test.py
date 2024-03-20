@@ -1,13 +1,5 @@
 import numpy as np
-from scipy import linalg
 from enum import Enum
-import threading
-
-import spatialmath as sm
-import matplotlib.pyplot as plt
-import spatialgeometry as geometry
-import roboticstoolbox as rtb
-from swift import Swift
 
 # Import custom utility functions
 from utility import *
@@ -16,7 +8,7 @@ from fakePR2 import FakePR2
 import rospy
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from sensor_msgs.msg import JointState, Joy
-from std_msgs.msg import Float64MultiArray, Float64
+from std_msgs.msg import Float64MultiArray, Float64, Header
 import tf
 
 
@@ -40,11 +32,12 @@ RIGHT_SAMPLE_JOINTSTATES = [-np.pi/6,
 
 # RIGHT_SAMPLE_JOINTSTATES = [0, 0, 0, 0, 0, 0, np.pi]
 
-# class CONTROL_MODE(Enum):
-#     POSITION = 0
-#     VELOCITY = 1
-#     ACCELERATION = 2
-#     EFFORT = 3
+
+class CONTROL_MODE(Enum):
+    POSITION = 0
+    VELOCITY = 1
+    ACCELERATION = 2
+    EFFORT = 3
 
 
 class PR2BiCoor:
@@ -73,47 +66,47 @@ class PR2BiCoor:
 
         # Initialize the robot model
         self._robot = FakePR2()
+        self._constraint_is_set = False
+        self._rate = rospy.Rate(10)
 
         # Initialize the joint states subscriber
         self._joint_states = None
-        rospy.wait_for_message('/joint_states', JointState)
         self._joint_state_sub = rospy.Subscriber(
             '/joint_states', JointState, self._joint_state_callback)
-        
+
         # Initialize the joystick subscriber
         self._joy_msg = None
-        rospy.wait_for_message('/joy', Joy)
         self._joystick_sub = rospy.Subscriber(
             '/joy', Joy, self._joystick_callback)
-        
 
         # Initialize arms controllers publishers
-        # left_arm_pub = rospy.Publisher(
-        #     'l_arm_controller/command', JointTrajectory, queue_size=1)
-        # right_arm_pub = rospy.Publisher(
-        #     'r_arm_controller/command', JointTrajectory, queue_size=1)
+        left_arm_pub = rospy.Publisher(
+            'l_arm_controller/command', JointTrajectory, queue_size=1)
+        right_arm_pub = rospy.Publisher(
+            'r_arm_controller/command', JointTrajectory, queue_size=1)
 
-        # self._arm_control_pub = {
-        #     'left': left_arm_pub,
-        #     'right': right_arm_pub
+        self._arm_control_pub = {
+            'left': left_arm_pub,
+            'right': right_arm_pub
+        }
+
+        # # Initialize arms velocity publishers
+        # right_arm_vel_pub = rospy.Publisher(
+        #     'r_joint_group_vel_controller/command', Float64MultiArray, queue_size=1)
+        # left_arm_vel_pub = rospy.Publisher(
+        #     'l_joint_group_vel_controller/command', Float64MultiArray, queue_size=1)
+
+        # self._arm_vel_pub = {
+        #     'left': left_arm_vel_pub,
+        #     'right': right_arm_vel_pub
         # }
 
-        right_arm_vel_pub = rospy.Publisher(
-            'r_joint_group_vel_controller/command', Float64MultiArray, queue_size=1)
-        left_arm_vel_pub = rospy.Publisher(
-            'l_joint_group_vel_controller/command', Float64MultiArray, queue_size=1)
-
-        self._arm_vel_pub = {
-            'left': left_arm_vel_pub,
-            'right': right_arm_vel_pub
-        }
+        self._joint_group_vel_pub = rospy.Publisher(
+            'pr2_joint_group_vel_controller/command', Float64MultiArray, queue_size=1)
 
         # Initialize the transform listener
         self._tf_listener = tf.TransformListener()
         rospy.on_shutdown(self._clean)
-
-        self._rate = rospy.Rate(10)
-
 
     def set_kinematics_constraints(self):
         r"""
@@ -122,55 +115,60 @@ class PR2BiCoor:
         """
 
         left_pose = self._tf_listener.lookupTransform(
-            'l_gripper_tool_frame', 'base_link', rospy.Time(0))
+            'base_link', 'l_gripper_tool_frame', rospy.Time(0))
         left_pose = tf.TransformerROS.fromTranslationRotation(
-            left_pose[0], left_pose[1])
-        # left_pose = self.posestamped_to_SE3(left_pose[0], left_pose[1])
+            tf.TransformerROS, translation=left_pose[0], rotation=left_pose[1])
 
         right_pose = self._tf_listener.lookupTransform(
-            'r_gripper_tool_frame', 'base_link', rospy.Time(0))
+            'base_link', 'r_gripper_tool_frame', rospy.Time(0))
         right_pose = tf.TransformerROS.fromTranslationRotation(
-            right_pose[0], right_pose[1])
-        # right_pose = self.posestamped_to_SE3(right_pose[0], right_pose[1])
+            tf.TransformerROS, translation=right_pose[0], rotation=right_pose[1])
 
-        virtual_pose = np.eye(4, 4)
-        virtual_pose[0:3, 3] = (left_pose[:3, -1] + right_pose[:3, -1]) / 2
+        virtual_pose = np.eye(4)
+        virtual_pose[:3, -1] = (left_pose[:3, -1] + right_pose[:3, -1]) / 2
 
-        self.robot.set_constraints(virtual_pose)
+        self._robot.set_constraints(virtual_pose)
+        return True
 
-    # def send_command(self, side, control_mode, value, duration):
-    #     r"""
-    #     Send the command to the robot
-    #     :param joint_names: list of joint names
-    #     :param control_mode: control mode
-    #     :param value: control value
-    #     :param duration: duration of the command
-    #     :return: None
-    #     """
-    #     msg = JointTrajectory()
-    #     msg.header.frame_id = 'torso_lift_link'
-    #     msg.header.stamp = rospy.Time.now()
-    #     msg.joint_names = self.JOINT_NAMES[side]
-    #     point = JointTrajectoryPoint()
-    #     if control_mode == CONTROL_MODE.POSITION:
-    #         point.positions = value
-    #     elif control_mode == CONTROL_MODE.VELOCITY:
-    #         point.velocities = value
-    #     elif control_mode == CONTROL_MODE.ACCELERATION:
-    #         point.accelerations = value
-    #     elif control_mode == CONTROL_MODE.EFFORT:
-    #         point.effort = value
-    #     point.time_from_start = rospy.Duration(duration)
-    #     msg.points.append(point)
+    def send_traj_command(self, side, control_mode, value, duration):
+        r"""
+        Send the command to the robot
+        :param joint_names: list of joint names
+        :param control_mode: control mode
+        :param value: control value
+        :param duration: duration of the command
+        :return: None
+        """
+        msg = JointTrajectory()
+        msg.header.frame_id = 'torso_lift_link'
+        msg.header.stamp = rospy.Time.now()
+        msg.joint_names = self.JOINT_NAMES[side]
+        point = JointTrajectoryPoint()
+        if control_mode == CONTROL_MODE.POSITION:
+            point.positions = value
+        elif control_mode == CONTROL_MODE.VELOCITY:
+            point.velocities = value
+        elif control_mode == CONTROL_MODE.ACCELERATION:
+            point.accelerations = value
+        elif control_mode == CONTROL_MODE.EFFORT:
+            point.effort = value
+        point.time_from_start = rospy.Duration(duration)
+        msg.points.append(point)
 
-    #     self._arm_control_pub[side].publish(msg)
+        self._arm_control_pub[side].publish(msg)
 
     def send_command(self, side: str, values: list):
 
         msg = Float64MultiArray()
         msg.data = values
         self._arm_vel_pub[side].publish(msg)
-        # pass
+
+    def joint_group_command_to_msg(self, values: list):
+
+        msg = Float64MultiArray()
+        msg.data = values
+        return msg
+        # self._arm_vel_pub[side].publish(msg)
 
     def _joint_state_callback(self, msg):
         r"""
@@ -180,7 +178,7 @@ class PR2BiCoor:
         """
 
         self._joint_states = msg.position
-        self._robot.set_joint_states(self.joint_states)
+        self._robot.set_joint_states(self._joint_states)
 
     def _joystick_callback(self, msg):
         r"""
@@ -189,25 +187,7 @@ class PR2BiCoor:
         :return: None
         """
 
-        self._joy_msg = msg
-
-    def joy_to_twist(self, joy, gain):
-        r"""
-        Convert the joystick input to twist
-        :param joy: joystick input
-        :param gain: gain
-        :return: twist
-        """
-
-        twist = np.zeros(6)
-        twist[0] = joy.axes[1] * gain[0]
-        twist[1] = joy.axes[0] * gain[0]
-        twist[2] = joy.axes[4] * gain[0]
-        twist[3] = joy.axes[3] * gain[1]
-        twist[4] = joy.axes[2] * gain[1]
-        twist[5] = joy.axes[5] * gain[1]
-
-        return twist
+        self._joy_msg = (msg.axes, msg.buttons)
 
     def move_to_neutral(self):
         r"""
@@ -215,29 +195,48 @@ class PR2BiCoor:
         :return: None
         """
 
+        # while not rospy.is_shutdown():
+        self.send_traj_command('right', CONTROL_MODE.POSITION,
+                               RIGHT_SAMPLE_JOINTSTATES, 3)
+        self.send_traj_command('left', CONTROL_MODE.POSITION,
+                               LEFT_SAMPLE_JOINTSTATES, 3)
+
+    def start(self):
+
+        rospy.wait_for_message('/joy', Joy)
         while not rospy.is_shutdown():
-            self.send_command('right', CONTROL_MODE.POSITION,
-                              RIGHT_SAMPLE_JOINTSTATES, 3)
-            self.send_command('left', CONTROL_MODE.POSITION,
-                              LEFT_SAMPLE_JOINTSTATES, 3)
+
+            if self._joy_msg[1][-3]:
+                self.move_to_neutral()
+
+            if  (self._joy_msg[1][4] * self._joy_msg[1][5]) and not self._constraint_is_set:
+                self._constraint_is_set = self.set_kinematics_constraints()
+
+            if self._constraint_is_set:
+
+                twist, done = joy_to_twist(self._joy_msg, [0.1, 0.1])
+                jacob_left = self._robot.get_jacobian('left')
+                jacob_right = self._robot.get_jacobian('right')
+
+                qdot_l, qdot_r = duo_arm_qdot_constraint(
+                    jacob_left, jacob_right, twist, activate_nullspace=True)
+
+                qdot = np.concatenate([qdot_r, qdot_l])
+                msg = self.joint_group_command_to_msg(qdot)
+                self._joint_group_vel_pub.publish(msg)
+                # self.send_command('left', qdot_l)
+                # self.send_command('right', qdot_r)
+
             self._rate.sleep()
-
-    def bimanual_controller(self):
-        r"""
-        Bimanual controller
-        :return: None
-        """
-
-        pass
 
     def _clean(self):
 
-        self._robot.q()
+        self._robot.shutdown()
 
 
 if __name__ == "__main__":
 
     # Initialize the ROS node
-    rospy.init_node('test_command')
+    rospy.init_node('test_command', disable_signals=True)
     controller = PR2BiCoor()
-    controller.move_to_neutral()
+    controller.start()

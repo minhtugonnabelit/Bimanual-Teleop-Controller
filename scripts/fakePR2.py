@@ -23,16 +23,17 @@ class FakePR2:
         self._is_collapsed = False
         self._constraints_is_set = False
         self.init_visualization()
+        self.thread = threading.Thread(target=self.timeline)
+        self.thread.start()
 
-        pass
-
+        
     def timeline(self):
         r"""
         Timeline function to update the visualization
         :return: None
         """
         while not self._is_collapsed:
-            self._env.step()
+            self._env.step(0.1)
 
     def set_constraints(self, virtual_pose: np.ndarray):
         r"""
@@ -41,16 +42,20 @@ class FakePR2:
         :return: None
         """
 
-        self._virtual_pose = virtual_pose
-        self._joined_in_left = linalg.inv(sm.SE3(self._robot.fkine(
-            self._robot.q, end=self._robot.grippers[1], ).A)) @ virtual_pose
-        self._joined_in_right = linalg.inv(sm.SE3(self._robot.fkine(
-            self._robot.q, end=self._robot.grippers[0], ).A)) @ virtual_pose
+        # self._virtual_pose = virtual_pose
+        self._joined_in_left = linalg.inv(self._robot.fkine(
+            self._robot.q, end=self._robot.grippers[1])) @ virtual_pose
+        self._joined_in_right = linalg.inv(self._robot.fkine(
+            self._robot.q, end=self._robot.grippers[0])) @ virtual_pose
+        
+        self._ee_constraint = {
+            "left": self._joined_in_left,
+            "right": self._joined_in_right
+        }
 
         self._constraints_is_set = True
 
         return True
-        # pass
 
     def set_joint_states(self, joint_states: list):
         r"""
@@ -59,22 +64,25 @@ class FakePR2:
         :return: None
         """
         # print(joint_states)
+        left_js = np.array(joint_states[17:24])
+        right_js = np.array(joint_states[31:38])
 
-        self._robot.q[16:23] = joint_states[17:24]
-        self._robot.q[23:30] = joint_states[31:38]
+        left_js[0], left_js[1], left_js[2], left_js[3], left_js[4] = left_js[1], left_js[2], left_js[0], left_js[4], left_js[3]
+        right_js[0], right_js[1], right_js[2], right_js[3], right_js[4] = right_js[1], right_js[2], right_js[0], right_js[4], right_js[3]
 
-        left_constraint = np.eye(4, 4)
-        right_constraint = np.eye(4, 4)
+        self._robot.q[16:23] = left_js
+        self._robot.q[23:30] = right_js
+
+        left_constraint = np.eye(4)
+        right_constraint = np.eye(4)
         if self._constraints_is_set:    # If the constraints are set, then update the virtual frame from the middle point between the two end-effectors
-            left_constraint = self._joined_in_left
-            right_constraint = self._joined_in_right
+            left_constraint = self._ee_constraint['left']
+            right_constraint = self._ee_constraint['right']
 
         self._left_ax.T = self._robot.fkine(
             self._robot.q, end=self._robot.grippers[1], ).A @ left_constraint
         self._right_ax.T = self._robot.fkine(
             self._robot.q, end=self._robot.grippers[0], ).A @ right_constraint
-
-        # self._env.step()
 
     def init_visualization(self):
         r"""
@@ -102,17 +110,16 @@ class FakePR2:
         self._env.add(self._left_ax)
         self._env.add(self._right_ax)
 
-        self.thread = threading.Thread(target=self.timeline)
-        self.thread.start()
 
-    def get_jacobian(self, side, tool=None):
+
+    def get_jacobian(self, side):
         r"""
         Get the Jacobian of the robot
         :param side: side of the robot
-        :param tool: tool frame
 
         :return: Jacobian
         """
+        tool = sm.SE3(self._ee_constraint[side]) if self._constraints_is_set else None
 
         if side == 'left':
             return self._robot.jacobe(self._robot.q, end=self._robot.grippers[1], start="l_shoulder_pan_link", tool=tool)
@@ -121,10 +128,11 @@ class FakePR2:
         else:
             return None
 
-    def q(self):
+    def shutdown(self):
         r"""
         Get the joint states of the robot
         :return: joint states
         """
+        print("Fake PR2 is collapsed")
         self._is_collapsed = True
         self.thread.join()
