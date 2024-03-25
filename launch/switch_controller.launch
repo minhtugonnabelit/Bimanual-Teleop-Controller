@@ -1,7 +1,9 @@
 <launch>
    <rosparam file="$(find bimanual_teleop_controller)/config/pr2_joint_group_velocities_controller.yaml" command="load" />
 
-   <node pkg="pr2_controller_manager" type="spawner" args="pr2_joint_group_vel_controller" name="joint_group_vel_controller_spawner" />
+   <!-- <node pkg="pr2_controller_manager" type="spawner" args="pr2_joint_group_vel_controller" name="joint_group_vel_controller_spawner" /> -->
+   <node pkg="pr2_controller_manager" type="spawner" args="r_joint_joint_group_vel_controller" name="right_joint_group_velocities_controller_spawner" />
+   <node pkg="pr2_controller_manager" type="spawner" args="l_joint_joint_group_vel_controller" name="left_joint_group_velocities_controller_spawner" />
    <node pkg="pr2_controller_manager" type="unspawner" args="l_arm_controller" name="l_arm_controller_stopper" />
    <node pkg="pr2_controller_manager" type="unspawner" args="r_arm_controller" name="r_arm_controller_stopper" />
 
