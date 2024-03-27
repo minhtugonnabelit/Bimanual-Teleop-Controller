@@ -1,8 +1,17 @@
 import rospy
+import numpy as np
 
-# Import custom utility functions
-from utility import *
+# # Import custom utility functions
+# from utility import *
+
+# from enum import Enum
+
+# import tf
+# from std_msgs.msg import Float64MultiArray, Float64, Header
+# from sensor_msgs.msg import JointState, Joy
+# from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from pr2_bimanual_controller import PR2BimanualController
+
 
 
 # LEFT_SAMPLE_JOINTSTATES = [np.pi/6,
@@ -58,6 +67,7 @@ from pr2_bimanual_controller import PR2BimanualController
 #     def __init__(self):
 
 #         # Initialize the robot model
+#         rospy.loginfo('Initializing the robot model')
 #         self._robot = FakePR2()
 #         self._constraint_is_set = False
 #         self._rate = rospy.Rate(10)
@@ -99,6 +109,7 @@ from pr2_bimanual_controller import PR2BimanualController
 
 #         # Initialize the transform listener
 #         self._tf_listener = tf.TransformListener()
+#         rospy.loginfo('Initialization complete')
 #         rospy.on_shutdown(self._clean)
 
 #     def set_kinematics_constraints(self):
@@ -194,11 +205,11 @@ from pr2_bimanual_controller import PR2BimanualController
 #         self.send_traj_command('left', CONTROL_MODE.POSITION,
 #                                LEFT_SAMPLE_JOINTSTATES, 3)
 
-#     def start(self):
+#     def bmcp_test(self):
 
 #         rospy.wait_for_message('/joy', Joy)
 #         while not rospy.is_shutdown():
-
+            
 #             if self._joy_msg[1][-3]:
 #                 self.move_to_neutral()
 
@@ -227,7 +238,8 @@ from pr2_bimanual_controller import PR2BimanualController
 
 #         self._robot.shutdown()
 
-# Initialize the ROS node
-rospy.init_node('Bimanua_Test', disable_signals=True)
-controller = PR2BimanualController()
-controller.bmcp_test()
+if __name__ == '__main__':
+
+    # Initialize the ROS node
+    controller = PR2BimanualController()
+    controller.bmcp_test()

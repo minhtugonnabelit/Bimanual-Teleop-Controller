@@ -7,6 +7,7 @@ from scipy import linalg
 from swift import Swift
 
 import threading
+from copy import deepcopy
 import math
 import pygame
 import sys
@@ -61,10 +62,10 @@ def joy_to_twist(joy, gain):
         y = joy.get_button(1)*0.1 - joy.get_button(3)*0.1
 
         #Low pass filter
-        vy = joy.get_axis(0) if abs(joy.get_axis(0)) > 0.1 else 0
-        vx = joy.get_axis(1) if abs(joy.get_axis(1)) > 0.1 else 0
-        r = joy.get_axis(3) if abs(joy.get_axis(3)) > 0.2 else 0
-        p = joy.get_axis(4) if abs(joy.get_axis(4)) > 0.2 else 0
+        vy = joy.get_axis(0) if abs(joy.get_axis(0)) > 0.7 else 0
+        vx = joy.get_axis(1) if abs(joy.get_axis(1)) > 0.7 else 0
+        r = joy.get_axis(3) if abs(joy.get_axis(3)) > 0.7 else 0
+        p = joy.get_axis(4) if abs(joy.get_axis(4)) > 0.7 else 0
 
     else: 
         
@@ -75,10 +76,10 @@ def joy_to_twist(joy, gain):
         y = joy[1][4]*0.1 - joy[1][5]*0.1
 
         #Low pass filter
-        vy = joy[0][0] if abs(joy[0][0]) > 0.1 else 0
-        vx = joy[0][1] if abs(joy[0][1]) > 0.1 else 0
-        r = joy[0][3] if abs(joy[0][3]) > 0.2 else 0
-        p = joy[0][4] if abs(joy[0][4]) > 0.2 else 0
+        vy = joy[0][0] if abs(joy[0][0]) > 0.7 else 0
+        vx = joy[0][1] if abs(joy[0][1]) > 0.7 else 0
+        r = joy[0][3] if abs(joy[0][3]) > 0.7 else 0
+        p = joy[0][4] if abs(joy[0][4]) > 0.7 else 0
 
     
     
@@ -280,16 +281,18 @@ class FakePR2:
     This will initialize the Swift environment with robot model without any ROS components. 
     This model will be fed with joint states provided and update the visualization of the virtual frame . """
 
-    def __init__(self) -> None:
+    def __init__(self):
 
         self._robot = rtb.models.PR2()
         self._robot.q = np.zeros(31)
 
         self._is_collapsed = False
         self._constraints_is_set = False
+        self._env = Swift()
+        self._env.set_camera_pose([1, 0, 1], [0, 0.5, 1])
         self.init_visualization()
-        self._thread = threading.Thread(target=self.timeline)
-        self._thread.start()
+        # self._thread = threading.Thread(target=self.timeline)
+        # self._thread.start()
 
         
     def timeline(self):
@@ -338,6 +341,7 @@ class FakePR2:
 
         self._robot.q[16:23] = left_js
         self._robot.q[23:30] = right_js
+        self.q = deepcopy(self._robot.q)
 
         left_constraint = np.eye(4)
         right_constraint = np.eye(4)
@@ -356,9 +360,7 @@ class FakePR2:
 
         :return: None
         """
-
-        self._env = Swift()
-        self._env.set_camera_pose([1, 0, 1], [0, 0.5, 1])
+        print('bruh')
 
         if not self._constraints_is_set:    # If the constraints are not set, then visualize the virtual frame from each arm end-effector
             self._left_ax = geometry.Axes(length=0.05, pose=self._robot.fkine(
@@ -371,9 +373,11 @@ class FakePR2:
             self._right_ax = geometry.Axes(length=0.05, pose=self._robot.fkine(
                 self._robot.q, end=self._robot.grippers[0], ).A @ self._joined_in_right)
 
-        self._env.add(self._robot)
-        self._env.add(self._left_ax)
-        self._env.add(self._right_ax)
+        print('brhu2')
+
+        # self._env.add(self._robot)
+        # self._env.add(self._left_ax)
+        # self._env.add(self._right_ax)
 
 
 

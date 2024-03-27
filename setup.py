@@ -3,7 +3,7 @@ from catkin_pkg.python_setup import generate_distutils_setup
 
 d = generate_distutils_setup(
     packages=["bimanual_controller"],
-    package_dir={"": "src"},
+    package_dir={"": "scripts"},
     install_requires=["numpy", "scipy", "spatialmath-python", "roboticstoolbox-python"],
 )
 

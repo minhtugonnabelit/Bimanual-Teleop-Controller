@@ -23,14 +23,14 @@ r_joint_group_vel_controller:
   joints: *r_arm_joints
   gains:
     r_shoulder_pan_joint:
-        &shoulder_pan_joint_gains {
-          p: 18.0,
-          i: 4.67,
-          d: 0.0,
-          i_clamp: 100.0,
-          i_clamp_max: 100.0,
-          i_clamp_min: -100.0,
-        }
+      &shoulder_pan_joint_gains {
+        p: 18.0,
+        i: 4.67,
+        d: 0.0,
+        i_clamp: 100.0,
+        i_clamp_max: 100.0,
+        i_clamp_min: -100.0,
+      }
     r_shoulder_lift_joint:
       &shoulder_lift_joint_gains {
         p: 10.0,
@@ -85,6 +85,71 @@ r_joint_group_vel_controller:
         i_clamp_max: 100.0,
         i_clamp_min: -100.0,
       }
+
+  # gains:
+  #   r_shoulder_pan_joint:
+  #     &shoulder_pan_joint_gains {
+  #       p: 0.0,
+  #       i: 0.0,
+  #       d: 0.0,
+  #       i_clamp: 100.0,
+  #       i_clamp_max: 100.0,
+  #       i_clamp_min: -100.0,
+  #     }
+  #   r_shoulder_lift_joint:
+  #     &shoulder_lift_joint_gains {
+  #       p: 0.0,
+  #       i: 0.0,
+  #       d: 0.0,
+  #       i_clamp: 100.0,
+  #       i_clamp_max: 100.0,
+  #       i_clamp_min: -100.0,
+  #     }
+  #   r_upper_arm_roll_joint:
+  #     &upper_arm_roll_joint_gains {
+  #       p: 0.0,
+  #       i: 0.0,
+  #       d: 0.0,
+  #       i_clamp: 100.0,
+  #       i_clamp_max: 100.0,
+  #       i_clamp_min: -100.0,
+  #     }
+  #   r_elbow_flex_joint:
+  #     &elbow_flex_joint_gains {
+  #       p: 0.0,
+  #       i: 0.0,
+  #       d: 0.0,
+  #       i_clamp: 100.0,
+  #       i_clamp_max: 100.0,
+  #       i_clamp_min: -100.0,
+  #     }
+  #   r_forearm_roll_joint:
+  #     &forearm_roll_joint_gains {
+  #       p: 0.0,
+  #       i: 0.0,
+  #       d: 0.0,
+  #       i_clamp: 100.0,
+  #       i_clamp_max: 100.0,
+  #       i_clamp_min: -100.0,
+  #     }
+  #   r_wrist_flex_joint:
+  #     &wrist_flex_joint_gains {
+  #       p: 0.0,
+  #       i: 0.0,
+  #       d: 0.0,
+  #       i_clamp: 100.0,
+  #       i_clamp_max: 100.0,
+  #       i_clamp_min: -100.0,
+  #     }
+  #   r_wrist_roll_joint:
+  #     &wrist_roll_joint_gains {
+  #       p: 0.0,
+  #       i: 0.0,
+  #       d: 0.0,
+  #       i_clamp: 100.0,
+  #       i_clamp_max: 100.0,
+  #       i_clamp_min: -100.0,
+  #     }
 
 l_joint_group_vel_controller:
   type: "robot_mechanism_controllers/JointGroupVelocityController"
