@@ -6,6 +6,7 @@ from scipy import linalg
 from swift import Swift
 import threading
 
+from utility import *
 
 class FakePR2:
 
@@ -15,16 +16,18 @@ class FakePR2:
     This will initialize the Swift environment with robot model without any ROS components. 
     This model will be fed with joint states provided and update the visualization of the virtual frame . """
 
-    def __init__(self) -> None:
+    def __init__(self, launch_visualizer) -> None:
 
         self._robot = rtb.models.PR2()
         self._robot.q = np.zeros(31)
 
         self._is_collapsed = False
         self._constraints_is_set = False
-        self.init_visualization()
-        self.thread = threading.Thread(target=self.timeline)
-        self.thread.start()
+        self._virtual_pose = None
+        if launch_visualizer:
+            self.init_visualization()
+            self.thread = threading.Thread(target=self.timeline)
+            self.thread.start()
 
         
     def timeline(self):
@@ -42,7 +45,7 @@ class FakePR2:
         :return: None
         """
 
-        # self._virtual_pose = virtual_pose
+        self._virtual_pose = virtual_pose
         self._joined_in_left = linalg.inv(self._robot.fkine(
             self._robot.q, end=self._robot.grippers[1])) @ virtual_pose
         self._joined_in_right = linalg.inv(self._robot.fkine(
@@ -110,7 +113,26 @@ class FakePR2:
         self._env.add(self._left_ax)
         self._env.add(self._right_ax)
 
+    def get_virtual_pose(self):
+        r"""
+        Get the virtual pose of the robot
+        :return: virtual pose
+        """
+        return self._virtual_pose
 
+    def get_tool_pose(self, side):
+        r"""
+        Get the tool pose of the robot
+        :param side: side of the robot
+
+        :return: tool pose
+        """
+        if side == 'left':
+            return self._robot.fkine(self._robot.q, end=self._robot.grippers[1], ).A @ self._ee_constraint[side] if self._constraints_is_set else self._robot.fkine(self._robot.q, end=self._robot.grippers[1], ).A 
+        elif side == 'right':
+            return self._robot.fkine(self._robot.q, end=self._robot.grippers[0], ).A @ self._ee_constraint[side] if self._constraints_is_set else self._robot.fkine(self._robot.q, end=self._robot.grippers[0], ).A
+        else:
+            return None
 
     def get_jacobian(self, side):
         r"""

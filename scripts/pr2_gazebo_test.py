@@ -11,6 +11,10 @@ from sensor_msgs.msg import JointState, Joy
 from std_msgs.msg import Float64MultiArray, Float64, Header
 import tf
 
+from scipy import linalg
+import spatialmath as sm
+import roboticstoolbox as rtb
+
 
 LEFT_SAMPLE_JOINTSTATES = [np.pi/6,
                            np.pi/6,
@@ -65,9 +69,9 @@ class PR2BiCoor:
     def __init__(self):
 
         # Initialize the robot model
-        self._robot = FakePR2()
+        self._robot = FakePR2(launch_visualizer=False)
         self._constraint_is_set = False
-        self._rate = rospy.Rate(10)
+        self._rate = rospy.Rate(20)
 
         # Initialize the joint states subscriber
         self._joint_states = None
@@ -106,6 +110,10 @@ class PR2BiCoor:
 
         # Initialize the transform listener
         self._tf_listener = tf.TransformListener()
+        self._desired_qdot_left = list()
+        self._actual_qdot_left = list()
+        self._desired_qdot_right = list()
+        self._actual_qdot_right = list()
         rospy.on_shutdown(self._clean)
 
     def set_kinematics_constraints(self):
@@ -113,7 +121,9 @@ class PR2BiCoor:
         Set the kinematics constraints for the robot
         :return: None
         """
-
+        tf.TransformListener().waitForTransform(
+            'base_link', 'l_gripper_tool_frame', rospy.Time(), rospy.Duration(4.0))
+        
         left_pose = self._tf_listener.lookupTransform(
             'base_link', 'l_gripper_tool_frame', rospy.Time(0))
         left_pose = tf.TransformerROS.fromTranslationRotation(
@@ -170,17 +180,17 @@ class PR2BiCoor:
         return msg
         # self._arm_vel_pub[side].publish(msg)
 
-    def _joint_state_callback(self, msg):
+    def _joint_state_callback(self, msg : JointState):
         r"""
         Callback function for the joint state subscriber
         :param msg: JointState message
         :return: None
         """
 
-        self._joint_states = msg.position
-        self._robot.set_joint_states(self._joint_states)
+        self._joint_states = msg
+        self._robot.set_joint_states(self._joint_states.position)
 
-    def _joystick_callback(self, msg):
+    def _joystick_callback(self, msg : Joy):
         r"""
         Callback function for the joystick subscriber
         :param msg: Joy message
@@ -197,9 +207,11 @@ class PR2BiCoor:
 
         # while not rospy.is_shutdown():
         self.send_traj_command('right', CONTROL_MODE.POSITION,
-                               RIGHT_SAMPLE_JOINTSTATES, 3)
+                               RIGHT_SAMPLE_JOINTSTATES, 1)
         self.send_traj_command('left', CONTROL_MODE.POSITION,
-                               LEFT_SAMPLE_JOINTSTATES, 3)
+                               LEFT_SAMPLE_JOINTSTATES, 1)
+        
+        
 
     def start(self):
 
@@ -213,25 +225,101 @@ class PR2BiCoor:
                 self._constraint_is_set = self.set_kinematics_constraints()
 
             if self._constraint_is_set:
+                
+                qdot = np.zeros(14)
+                qdot_l = np.zeros(7)
+                qdot_r = np.zeros(7)
 
-                twist, done = joy_to_twist(self._joy_msg, [0.1, 0.1])
-                jacob_left = self._robot.get_jacobian('left')
-                jacob_right = self._robot.get_jacobian('right')
+                if self._joy_msg[1][5]:
+                    start_time = time.time()
+                    twist, done = joy_to_twist(self._joy_msg, [0.1, 0.1])
+                    jacob_left = self._robot.get_jacobian('left')
+                    jacob_right = self._robot.get_jacobian('right')
 
-                qdot_l, qdot_r = duo_arm_qdot_constraint(
-                    jacob_left, jacob_right, twist, activate_nullspace=True)
+                    qdot_l, qdot_r = duo_arm_qdot_constraint(
+                        jacob_left, jacob_right, twist, activate_nullspace=True)
 
-                qdot = np.concatenate([qdot_r, qdot_l])
+                    qdot = np.concatenate([qdot_r, qdot_l])
+
+                    exec_time = time.time() - start_time
+                    print('Execution time: ', exec_time)
+
+                self._actual_qdot_left.append(reorder_values(self._joint_states.velocity[17:24]))
+                self._desired_qdot_left.append(qdot_r)
+
                 msg = self.joint_group_command_to_msg(qdot)
                 self._joint_group_vel_pub.publish(msg)
-                # self.send_command('left', qdot_l)
-                # self.send_command('right', qdot_r)
+
+
+            self._rate.sleep()
+
+    def home(self):
+        r"""
+        Move the robot to home position
+        :return: None
+        """
+        while not rospy.is_shutdown():
+            self.move_to_neutral()
+            self._rate.sleep()
+        # self.move_to_neutral()
+
+    def path_trakcing_test(self):
+
+        updated_joined_left = self._robot.get_tool_pose('left')
+        # rospy.wait_for_message('/joy', Joy)
+        arrived = False
+        home = False
+        qdot = np.zeros(14)
+        qdot_l = np.zeros(7)
+        qdot_r = np.zeros(7)
+        target = np.eye(4)
+
+        while not rospy.is_shutdown() :
+
+            if not self._constraint_is_set:
+                self._constraint_is_set = self.set_kinematics_constraints()    
+                pose = self._robot.get_virtual_pose()
+                target = pose @ sm.SE3(0.2, 0, 0).A
+                print('constraint is set')
+                
+            updated_joined_left = self._robot.get_tool_pose('left')
+            middle_twist, arrived = rtb.p_servo(updated_joined_left,
+                                                            target,
+                                                            gain=0.1,
+                                                            threshold=0.01,
+                                                            method='angle-axis')  # Servoing in the virtual middle frame using angle-axis representation for angular error
+            
+            jacob_left = self._robot.get_jacobian('left')
+            jacob_right = self._robot.get_jacobian('right')
+
+            # Calculate the joint velocities using the Resolved Motion Rate Control (RMRC) method with the projection onto nullspace of Constraint Jacobian
+            qdot_l, qdot_r = duo_arm_qdot_constraint(jacob_left, jacob_right, middle_twist, activate_nullspace=True)
+
+            # Visualization of the frames
+            updated_joined_left = self._robot.get_tool_pose('left')
+
+            qdot = np.concatenate([qdot_r, qdot_l])
+            msg = self.joint_group_command_to_msg(qdot)
+            self._joint_group_vel_pub.publish(msg)
+            
+            self._actual_qdot_left.append(reorder_values(self._joint_states.velocity[17:24]))
+            self._desired_qdot_left.append(qdot_r)
+
+            self._actual_qdot_right.append(reorder_values(self._joint_states.velocity[31:38]))
+            self._desired_qdot_right.append(qdot_l)
+
+            if arrived:
+                print('Arrived')
+                break 
 
             self._rate.sleep()
 
     def _clean(self):
 
         self._robot.shutdown()
+        print('Shutting down the robot')
+        plot_joint_velocities(self._actual_qdot_left, self._desired_qdot_left)
+        plot_joint_velocities(self._actual_qdot_right, self._desired_qdot_right)
 
 
 if __name__ == "__main__":
@@ -239,4 +327,6 @@ if __name__ == "__main__":
     # Initialize the ROS node
     rospy.init_node('test_command', disable_signals=True)
     controller = PR2BiCoor()
+    # controller.path_trakcing_test()
+    # controller.home()
     controller.start()
