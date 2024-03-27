@@ -9,6 +9,7 @@ from sensor_msgs.msg import JointState, Joy
 from std_msgs.msg import Float64MultiArray, Float64, Header
 import tf
 
+import time
 from scipy import linalg
 import spatialmath as sm
 import roboticstoolbox as rtb
@@ -68,6 +69,7 @@ class PR2BiCoor:
 
         # Initialize the robot model
         self._robot = FakePR2(launch_visualizer=False)
+        print('Controller ready to go')
         self._constraint_is_set = False
         self._rate = rospy.Rate(20)
 
@@ -112,6 +114,7 @@ class PR2BiCoor:
         self._actual_qdot_left = list()
         self._desired_qdot_right = list()
         self._actual_qdot_right = list()
+        self._offset_distance = list()
         rospy.on_shutdown(self._clean)
 
     def set_kinematics_constraints(self):
@@ -121,7 +124,7 @@ class PR2BiCoor:
         """
         tf.TransformListener().waitForTransform(
             'base_link', 'l_gripper_tool_frame', rospy.Time(), rospy.Duration(4.0))
-        
+
         left_pose = self._tf_listener.lookupTransform(
             'base_link', 'l_gripper_tool_frame', rospy.Time(0))
         left_pose = tf.TransformerROS.fromTranslationRotation(
@@ -171,32 +174,6 @@ class PR2BiCoor:
         msg.data = values
         self._arm_vel_pub[side].publish(msg)
 
-    def joint_group_command_to_msg(self, values: list):
-
-        msg = Float64MultiArray()
-        msg.data = values
-        return msg
-        # self._arm_vel_pub[side].publish(msg)
-
-    def _joint_state_callback(self, msg : JointState):
-        r"""
-        Callback function for the joint state subscriber
-        :param msg: JointState message
-        :return: None
-        """
-
-        self._joint_states = msg
-        self._robot.set_joint_states(self._joint_states.position)
-
-    def _joystick_callback(self, msg : Joy):
-        r"""
-        Callback function for the joystick subscriber
-        :param msg: Joy message
-        :return: None
-        """
-
-        self._joy_msg = (msg.axes, msg.buttons)
-
     def move_to_neutral(self):
         r"""
         Move the robot to neutral position
@@ -208,22 +185,21 @@ class PR2BiCoor:
                                RIGHT_SAMPLE_JOINTSTATES, 1)
         self.send_traj_command('left', CONTROL_MODE.POSITION,
                                LEFT_SAMPLE_JOINTSTATES, 1)
-        
-        
 
-    def start(self):
+    def teleop_test(self):
 
+        print('start teleop')
         rospy.wait_for_message('/joy', Joy)
         while not rospy.is_shutdown():
 
             if self._joy_msg[1][-3]:
                 self.move_to_neutral()
 
-            if  (self._joy_msg[1][4] * self._joy_msg[1][5]) and not self._constraint_is_set:
+            if (self._joy_msg[1][4] * self._joy_msg[1][5]) and not self._constraint_is_set:
                 self._constraint_is_set = self.set_kinematics_constraints()
 
             if self._constraint_is_set:
-                
+
                 qdot = np.zeros(14)
                 qdot_l = np.zeros(7)
                 qdot_r = np.zeros(7)
@@ -231,8 +207,8 @@ class PR2BiCoor:
                 if self._joy_msg[1][5]:
                     start_time = time.time()
                     twist, done = joy_to_twist(self._joy_msg, [0.1, 0.1])
-                    jacob_left = self._robot.get_jacobian('left')
                     jacob_right = self._robot.get_jacobian('right')
+                    jacob_left = self._robot.get_jacobian('left')
 
                     qdot_l, qdot_r = duo_arm_qdot_constraint(
                         jacob_left, jacob_right, twist, activate_nullspace=True)
@@ -242,12 +218,16 @@ class PR2BiCoor:
                     exec_time = time.time() - start_time
                     print('Execution time: ', exec_time)
 
-                self._actual_qdot_left.append(reorder_values(self._joint_states.velocity[17:24]))
-                self._desired_qdot_left.append(qdot_r)
+                self._actual_qdot_left.append( reorder_values(self._joint_states.velocity[31:38]))
+                self._desired_qdot_left.append(qdot_l)
 
-                msg = self.joint_group_command_to_msg(qdot)
+                self._actual_qdot_right.append(  reorder_values(self._joint_states.velocity[17:24]))
+                self._desired_qdot_right.append(qdot_r)
+
+                self._offset_distance.append(np.linalg.norm(self._robot.get_tool_pose('left')[:3, -1] - self._robot.get_tool_pose('right')[:3, -1]))
+
+                msg = PR2BiCoor._joint_group_command_to_msg(qdot)
                 self._joint_group_vel_pub.publish(msg)
-
 
             self._rate.sleep()
 
@@ -259,12 +239,10 @@ class PR2BiCoor:
         while not rospy.is_shutdown():
             self.move_to_neutral()
             self._rate.sleep()
-        # self.move_to_neutral()
 
     def path_trakcing_test(self):
 
         updated_joined_left = self._robot.get_tool_pose('left')
-        # rospy.wait_for_message('/joy', Joy)
         arrived = False
         home = False
         qdot = np.zeros(14)
@@ -272,59 +250,92 @@ class PR2BiCoor:
         qdot_r = np.zeros(7)
         target = np.eye(4)
 
-        while not rospy.is_shutdown() :
+        while not rospy.is_shutdown():
+                
+            if self._joy_msg[1][-3]:
+                self.move_to_neutral()
 
-            if not self._constraint_is_set:
-                self._constraint_is_set = self.set_kinematics_constraints()    
+            if (self._joy_msg[1][4] * self._joy_msg[1][5]) and not self._constraint_is_set:
+                self._constraint_is_set = self.set_kinematics_constraints()  
                 pose = self._robot.get_virtual_pose()
                 target = pose @ sm.SE3(0.2, 0, 0).A
                 print('constraint is set')
-                
-            updated_joined_left = self._robot.get_tool_pose('left')
-            middle_twist, arrived = rtb.p_servo(updated_joined_left,
-                                                            target,
-                                                            gain=0.1,
-                                                            threshold=0.01,
-                                                            method='angle-axis')  # Servoing in the virtual middle frame using angle-axis representation for angular error
             
-            jacob_left = self._robot.get_jacobian('left')
-            jacob_right = self._robot.get_jacobian('right')
+            if self._constraint_is_set:
 
-            # Calculate the joint velocities using the Resolved Motion Rate Control (RMRC) method with the projection onto nullspace of Constraint Jacobian
-            qdot_l, qdot_r = duo_arm_qdot_constraint(jacob_left, jacob_right, middle_twist, activate_nullspace=True)
+                updated_joined_left = self._robot.get_tool_pose('left')
+                middle_twist, arrived = rtb.p_servo(updated_joined_left,
+                                                    target,
+                                                    gain=0.1,
+                                                    threshold=0.01,
+                                                    method='angle-axis')  # Servoing in the virtual middle frame using angle-axis representation for angular error
 
-            # Visualization of the frames
-            updated_joined_left = self._robot.get_tool_pose('left')
+                jacob_left = self._robot.get_jacobian('left')
+                jacob_right = self._robot.get_jacobian('right')
 
-            qdot = np.concatenate([qdot_r, qdot_l])
-            msg = self.joint_group_command_to_msg(qdot)
-            self._joint_group_vel_pub.publish(msg)
-            
-            self._actual_qdot_left.append(reorder_values(self._joint_states.velocity[17:24]))
-            self._desired_qdot_left.append(qdot_r)
+                # Calculate the joint velocities using the Resolved Motion Rate Control (RMRC) method with the projection onto nullspace of Constraint Jacobian
+                qdot_l, qdot_r = duo_arm_qdot_constraint(
+                    jacob_left, jacob_right, middle_twist, activate_nullspace=True)
 
-            self._actual_qdot_right.append(reorder_values(self._joint_states.velocity[31:38]))
-            self._desired_qdot_right.append(qdot_l)
+                # Visualization of the frames
+                updated_joined_left = self._robot.get_tool_pose('left')
+
+                qdot = np.concatenate([qdot_r, qdot_l])
+                msg = PR2BiCoor._joint_group_command_to_msg(qdot)
+                self._joint_group_vel_pub.publish(msg)
+
+            self._actual_qdot_left.append( reorder_values(self._joint_states.velocity[31:38]))
+            self._desired_qdot_left.append(qdot_l)
+
+            self._actual_qdot_right.append( reorder_values(self._joint_states.velocity[17:24]))
+            self._desired_qdot_right.append(qdot_r)
+
 
             if arrived:
                 print('Arrived')
-                break 
+                break
 
             self._rate.sleep()
+
+    @staticmethod
+    def _joint_group_command_to_msg(values: list):
+
+        msg = Float64MultiArray()
+        msg.data = values
+        return msg
+
+    def _joint_state_callback(self, msg: JointState):
+        r"""
+        Callback function for the joint state subscriber
+        :param msg: JointState message
+        :return: None
+        """
+
+        self._joint_states = msg
+        self._robot.set_joint_states(self._joint_states.position)
+
+    def _joystick_callback(self, msg: Joy):
+        r"""
+        Callback function for the joystick subscriber
+        :param msg: Joy message
+        :return: None
+        """
+
+        self._joy_msg = (msg.axes, msg.buttons)
 
     def _clean(self):
 
         self._robot.shutdown()
         print('Shutting down the robot')
-        plot_joint_velocities(self._actual_qdot_left, self._desired_qdot_left)
-        plot_joint_velocities(self._actual_qdot_right, self._desired_qdot_right)
+        plot_joint_velocities(self._actual_qdot_left, self._desired_qdot_left, distance_data=self._offset_distance)
+        plot_joint_velocities(self._actual_qdot_right, self._desired_qdot_right, distance_data=self._offset_distance)
 
 
 if __name__ == "__main__":
 
     # Initialize the ROS node
-    rospy.init_node('test_command', disable_signals=True)
+    print('start')
+    rospy.init_node('bcmp_test', log_level=rospy.DEBUG, anonymous=True,)
+    rospy.logdebug('Command node initialized')
     controller = PR2BiCoor()
-    controller.home()
-    # controller.path_trakcing_test()
-    # controller.start()
+    controller.teleop_test()

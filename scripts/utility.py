@@ -11,9 +11,10 @@ from copy import deepcopy
 import math
 import pygame
 import sys
-import time
+# import time
 import matplotlib.pyplot as plt
 from enum import Enum
+
 
 def joy_init():
     r"""
@@ -291,14 +292,15 @@ def reorder_values(data):
         raise ValueError("The length of the data should be 7")
 
     data_array = np.asarray(data)
-    data_array[0], data_array[1], data_array[2], data_array[3], data_array[4] = data_array[1], data_array[2], data_array[0], data_array[4], data_array[3]
+    data_array[0], data_array[1], data_array[2], data_array[3], data_array[
+        4] = data_array[1], data_array[2], data_array[0], data_array[4], data_array[3]
 
     return data_array.tolist()
 
-def plot_joint_velocities(actual_data: np.ndarray, desired_data):
 
+def plot_joint_velocities(actual_data: np.ndarray, desired_data, distance_data):
 
-    fig, ax = plt.subplots(2,4)
+    fig, ax = plt.subplots(2, 4)
 
     reformat_actual_data = list()
     reformat_desired_data = list()
@@ -315,38 +317,39 @@ def plot_joint_velocities(actual_data: np.ndarray, desired_data):
     print(len(reformat_actual_data[0]))
     print(len(reformat_desired_data[0]))
 
-    ax[0,0].plot(reformat_actual_data[0], 'r', linewidth=1)
-    ax[0,0].plot(reformat_desired_data[0], 'b', linewidth=1)
-    ax[0,0].set_title(f"Joint {0}")
+    ax[0, 0].plot(reformat_actual_data[0], 'r', linewidth=1)
+    ax[0, 0].plot(reformat_desired_data[0], 'b', linewidth=1)
+    ax[0, 0].set_title(f"Joint {0}")
 
-    ax[0,1].plot(reformat_actual_data[1], 'r', linewidth=1)
-    ax[0,1].plot(reformat_desired_data[1], 'b', linewidth=1)
-    ax[0,1].set_title(f"Joint {1}")
+    ax[0, 1].plot(reformat_actual_data[1], 'r', linewidth=1)
+    ax[0, 1].plot(reformat_desired_data[1], 'b', linewidth=1)
+    ax[0, 1].set_title(f"Joint {1}")
 
-    ax[0,2].plot(reformat_actual_data[2], 'r', linewidth=1) 
-    ax[0,2].plot(reformat_desired_data[2], 'b', linewidth=1)    
-    ax[0,2].set_title(f"Joint {2}")
+    ax[0, 2].plot(reformat_actual_data[2], 'r', linewidth=1)
+    ax[0, 2].plot(reformat_desired_data[2], 'b', linewidth=1)
+    ax[0, 2].set_title(f"Joint {2}")
 
-    ax[0,3].plot(reformat_actual_data[3], 'r', linewidth=1)
-    ax[0,3].plot(reformat_desired_data[3], 'b', linewidth=1)
-    ax[0,3].set_title(f"Joint {3}")
+    ax[0, 3].plot(reformat_actual_data[3], 'r', linewidth=1)
+    ax[0, 3].plot(reformat_desired_data[3], 'b', linewidth=1)
+    ax[0, 3].set_title(f"Joint {3}")
 
-    ax[1,0].plot(reformat_actual_data[4], 'r', linewidth=1)
-    ax[1,0].plot(reformat_desired_data[4], 'b', linewidth=1)
-    ax[1,0].set_title(f"Joint {4}")
+    ax[1, 0].plot(reformat_actual_data[4], 'r', linewidth=1)
+    ax[1, 0].plot(reformat_desired_data[4], 'b', linewidth=1)
+    ax[1, 0].set_title(f"Joint {4}")
 
-    ax[1,1].plot(reformat_actual_data[5], 'r', linewidth=1)
-    ax[1,1].plot(reformat_desired_data[5], 'b', linewidth=1)
-    ax[1,1].set_title(f"Joint {5}")
+    ax[1, 1].plot(reformat_actual_data[5], 'r', linewidth=1)
+    ax[1, 1].plot(reformat_desired_data[5], 'b', linewidth=1)
+    ax[1, 1].set_title(f"Joint {5}")
 
-    ax[1,2].plot(reformat_actual_data[6], 'r', linewidth=1)
-    ax[1,2].plot(reformat_desired_data[6], 'b', linewidth=1)
-    ax[1,2].set_title(f"Joint {6}")
+    ax[1, 2].plot(reformat_actual_data[6], 'r', linewidth=1)
+    ax[1, 2].plot(reformat_desired_data[6], 'b', linewidth=1)
+    ax[1, 2].set_title(f"Joint {6}")
+
+    ax[1, 3].plot(distance_data, 'g', linewidth=1)
 
     fig.legend(['Actual', 'Desired'])
 
     plt.show()
-
 
 
 class FakePR2:
@@ -359,18 +362,17 @@ class FakePR2:
 
     def __init__(self, launch_visualizer) -> None:
 
+        print('bruh1')
         self._robot = rtb.models.PR2()
-        self._robot.q = np.zeros(31)
-
         self._is_collapsed = False
         self._constraints_is_set = False
         self._virtual_pose = None
-        if launch_visualizer:
+        self._launch_visualizer = launch_visualizer
+        if self._launch_visualizer:
             self.init_visualization()
             self.thread = threading.Thread(target=self.timeline)
             self.thread.start()
 
-        
     def timeline(self):
         r"""
         Timeline function to update the visualization
@@ -392,7 +394,7 @@ class FakePR2:
             self._robot.q, end=self._robot.grippers[1])) @ virtual_pose
         self._joined_in_right = linalg.inv(self._robot.fkine(
             self._robot.q, end=self._robot.grippers[0])) @ virtual_pose
-        
+
         self._ee_constraint = {
             "left": self._joined_in_left,
             "right": self._joined_in_right
@@ -409,26 +411,24 @@ class FakePR2:
         :return: None
         """
         # print(joint_states)
-        left_js = np.array(joint_states[17:24])
-        right_js = np.array(joint_states[31:38])
+        right_js = reorder_values(joint_states[17:24])
+        left_js = reorder_values(joint_states[31:38])
 
-        left_js[0], left_js[1], left_js[2], left_js[3], left_js[4] = left_js[1], left_js[2], left_js[0], left_js[4], left_js[3]
-        right_js[0], right_js[1], right_js[2], right_js[3], right_js[4] = right_js[1], right_js[2], right_js[0], right_js[4], right_js[3]
-
-        self._robot.q[16:23] = left_js
-        self._robot.q[23:30] = right_js
+        self._robot.q[16:23] = right_js
+        self._robot.q[23:30] = left_js
         self.q = deepcopy(self._robot.q)
 
-        left_constraint = np.eye(4)
-        right_constraint = np.eye(4)
-        if self._constraints_is_set:    # If the constraints are set, then update the virtual frame from the middle point between the two end-effectors
-            left_constraint = self._ee_constraint['left']
-            right_constraint = self._ee_constraint['right']
+        if self._launch_visualizer:
+            left_constraint = np.eye(4)
+            right_constraint = np.eye(4)
+            if self._constraints_is_set:    # If the constraints are set, then update the virtual frame from the middle point between the two end-effectors
+                left_constraint = self._ee_constraint['left']
+                right_constraint = self._ee_constraint['right']
 
-        self._left_ax.T = self._robot.fkine(
-            self._robot.q, end=self._robot.grippers[1], ).A @ left_constraint
-        self._right_ax.T = self._robot.fkine(
-            self._robot.q, end=self._robot.grippers[0], ).A @ right_constraint
+            self._left_ax.T = self._robot.fkine(
+                self._robot.q, end=self._robot.grippers[1], ).A @ left_constraint
+            self._right_ax.T = self._robot.fkine(
+                self._robot.q, end=self._robot.grippers[0], ).A @ right_constraint
 
     def init_visualization(self):
         r"""
@@ -470,7 +470,7 @@ class FakePR2:
         :return: tool pose
         """
         if side == 'left':
-            return self._robot.fkine(self._robot.q, end=self._robot.grippers[1], ).A @ self._ee_constraint[side] if self._constraints_is_set else self._robot.fkine(self._robot.q, end=self._robot.grippers[1], ).A 
+            return self._robot.fkine(self._robot.q, end=self._robot.grippers[1], ).A @ self._ee_constraint[side] if self._constraints_is_set else self._robot.fkine(self._robot.q, end=self._robot.grippers[1], ).A
         elif side == 'right':
             return self._robot.fkine(self._robot.q, end=self._robot.grippers[0], ).A @ self._ee_constraint[side] if self._constraints_is_set else self._robot.fkine(self._robot.q, end=self._robot.grippers[0], ).A
         else:
@@ -498,6 +498,6 @@ class FakePR2:
         :return: joint states
         """
         print("Fake PR2 is collapsed")
-        self._is_collapsed = True
-        self.thread.join()
-
+        if self._launch_visualizer:
+            self._is_collapsed = True
+            self.thread.join()
