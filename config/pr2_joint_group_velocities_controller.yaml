@@ -35,7 +35,7 @@ r_joint_group_vel_controller:
       &shoulder_lift_joint_gains {
         p: 10.0,
         i: 5.67,
-        d: 0.0,
+        d: 0.1,
         i_clamp: 100.0,
         i_clamp_max: 100.0,
         i_clamp_min: -100.0,
@@ -44,7 +44,7 @@ r_joint_group_vel_controller:
       &upper_arm_roll_joint_gains {
         p: 6.0,
         i: 42.9,
-        d: 0.0,
+        d: 0.1,
         i_clamp: 100.0,
         i_clamp_max: 100.0,
         i_clamp_min: -100.0,
@@ -53,7 +53,7 @@ r_joint_group_vel_controller:
       &elbow_flex_joint_gains {
         p: 4.0,
         i: 20.0,
-        d: 0.0,
+        d: 0.1,
         i_clamp: 100.0,
         i_clamp_max: 100.0,
         i_clamp_min: -100.0,
@@ -62,7 +62,7 @@ r_joint_group_vel_controller:
       &forearm_roll_joint_gains {
         p: 6.0,
         i: 15.0,
-        d: 0.0,
+        d: 0.1,
         i_clamp: 100.0,
         i_clamp_max: 100.0,
         i_clamp_min: -100.0,
@@ -71,7 +71,7 @@ r_joint_group_vel_controller:
       &wrist_flex_joint_gains {
         p: 4.0,
         i: 25.0,
-        d: 0.0,
+        d: 0.1,
         i_clamp: 100.0,
         i_clamp_max: 100.0,
         i_clamp_min: -100.0,
@@ -80,7 +80,7 @@ r_joint_group_vel_controller:
       &wrist_roll_joint_gains {
         p: 4.0,
         i: 25.0,
-        d: 0.0,
+        d: 0.1,
         i_clamp: 100.0,
         i_clamp_max: 100.0,
         i_clamp_min: -100.0,

@@ -1,0 +1,78 @@
+# Publish all joint states ----------------------------------
+pr2_arms_interface:
+  joints: &pr2_arm_joints
+    - r_shoulder_pan_joint
+    - r_shoulder_lift_joint
+    - r_upper_arm_roll_joint
+    - r_elbow_flex_joint
+    - r_forearm_roll_joint
+    - r_wrist_flex_joint
+    - r_wrist_roll_joint
+    - l_shoulder_pan_joint
+    - l_shoulder_lift_joint
+    - l_upper_arm_roll_joint
+    - l_elbow_flex_joint
+    - l_forearm_roll_joint
+    - l_wrist_flex_joint
+    - l_wrist_roll_joint
+
+pr2_joint_group_vel_controller:
+  type: "robot_mechanism_controllers/JointGroupVelocityController"
+  joints: *pr2_arm_joints
+  gains:
+    r_shoulder_pan_joint:
+      &shoulder_pan_joint_gains {
+        p: 30,
+        i: 4.67,
+        d: 0.0,
+        i_clamp: 100.0
+      }
+    r_shoulder_lift_joint:
+      &shoulder_lift_joint_gains {
+        p: 30.0,
+        i: 5.67,
+        d: 0,
+        i_clamp: 100.0
+      }
+    r_upper_arm_roll_joint:
+      &upper_arm_roll_joint_gains {
+        p: 7,
+        i: 42.9,
+        d: 0,
+        i_clamp: 100.0
+      }
+    r_elbow_flex_joint:
+      &elbow_flex_joint_gains {
+        p: 5,
+        i: 20.0,
+        d: 0,
+        i_clamp: 100.0
+      }
+    r_forearm_roll_joint:
+      &forearm_roll_joint_gains {
+        p: 20.0,
+        i: 15.0,
+        d: 0,
+        i_clamp: 100.0
+      }
+    r_wrist_flex_joint:
+      &wrist_flex_joint_gains {
+        p: 8.0,
+        i: 25.0,
+        d: 0,
+        i_clamp: 100.0
+      }
+    r_wrist_roll_joint:
+      &wrist_roll_joint_gains {
+        p: 8.0,
+        i: 25.0,
+        d: 0,
+        i_clamp: 100.0
+      }
+    l_shoulder_pan_joint: *shoulder_pan_joint_gains
+    l_shoulder_lift_joint: *shoulder_lift_joint_gains
+    l_upper_arm_roll_joint: *upper_arm_roll_joint_gains
+    l_elbow_flex_joint: *elbow_flex_joint_gains
+    l_forearm_roll_joint: *forearm_roll_joint_gains
+    l_wrist_flex_joint: *wrist_flex_joint_gains
+    l_wrist_roll_joint: *wrist_roll_joint_gains
