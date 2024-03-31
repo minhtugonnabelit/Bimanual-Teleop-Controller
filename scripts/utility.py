@@ -298,206 +298,58 @@ def reorder_values(data):
     return data_array.tolist()
 
 
-def plot_joint_velocities(actual_data: np.ndarray, desired_data, distance_data):
+def plot_joint_velocities(actual_data: np.ndarray, desired_data, distance_data, dt=0.1, title='Joint Velocities'):
 
     fig, ax = plt.subplots(2, 4)
 
-    reformat_actual_data = list()
-    reformat_desired_data = list()
+    reformat_actual_data = []
+    reformat_desired_data = []
 
-    for i in range(7):
-        joint_vel_actual_data = list()
-        joint_vel_desired_data = list()
-        for j in range(len(actual_data)):
-            joint_vel_actual_data.append(actual_data[j][i])
-            joint_vel_desired_data.append(desired_data[j][i])
-        reformat_actual_data.append(joint_vel_actual_data)
-        reformat_desired_data.append(joint_vel_desired_data)
+    # Transpose the actual and desired data lists to group by joints instead of iterations
+    transposed_actual_data = list(zip(*actual_data))
+    transposed_desired_data = list(zip(*desired_data))
 
-    print(len(reformat_actual_data[0]))
-    print(len(reformat_desired_data[0]))
+    for actual_joint_velocities, desired_joint_velocities in zip(transposed_actual_data, transposed_desired_data):
+        reformat_actual_data.append(list(actual_joint_velocities))
+        reformat_desired_data.append(list(desired_joint_velocities))
 
-    ax[0, 0].plot(reformat_actual_data[0], 'r', linewidth=1)
-    ax[0, 0].plot(reformat_desired_data[0], 'b', linewidth=1)
+    time_space = np.linspace(0, len(actual_data)*dt, len(actual_data))
+
+    ax[0, 0].plot(time_space,reformat_actual_data[0], 'r', linewidth=1)
+    ax[0, 0].plot(time_space,reformat_desired_data[0], 'b', linewidth=1)
     ax[0, 0].set_title(f"Joint {0}")
 
-    ax[0, 1].plot(reformat_actual_data[1], 'r', linewidth=1)
-    ax[0, 1].plot(reformat_desired_data[1], 'b', linewidth=1)
+    ax[0, 1].plot(time_space,reformat_actual_data[1], 'r', linewidth=1)
+    ax[0, 1].plot(time_space,reformat_desired_data[1], 'b', linewidth=1)
     ax[0, 1].set_title(f"Joint {1}")
 
-    ax[0, 2].plot(reformat_actual_data[2], 'r', linewidth=1)
-    ax[0, 2].plot(reformat_desired_data[2], 'b', linewidth=1)
+    ax[0, 2].plot(time_space,reformat_actual_data[2], 'r', linewidth=1)
+    ax[0, 2].plot(time_space,reformat_desired_data[2], 'b', linewidth=1)
     ax[0, 2].set_title(f"Joint {2}")
 
-    ax[0, 3].plot(reformat_actual_data[3], 'r', linewidth=1)
-    ax[0, 3].plot(reformat_desired_data[3], 'b', linewidth=1)
+    ax[0, 3].plot(time_space,reformat_actual_data[3], 'r', linewidth=1)
+    ax[0, 3].plot(time_space,reformat_desired_data[3], 'b', linewidth=1)
     ax[0, 3].set_title(f"Joint {3}")
 
-    ax[1, 0].plot(reformat_actual_data[4], 'r', linewidth=1)
-    ax[1, 0].plot(reformat_desired_data[4], 'b', linewidth=1)
+    ax[1, 0].plot(time_space,reformat_actual_data[4], 'r', linewidth=1)
+    ax[1, 0].plot(time_space,reformat_desired_data[4], 'b', linewidth=1)
     ax[1, 0].set_title(f"Joint {4}")
 
-    ax[1, 1].plot(reformat_actual_data[5], 'r', linewidth=1)
-    ax[1, 1].plot(reformat_desired_data[5], 'b', linewidth=1)
+    ax[1, 1].plot(time_space,reformat_actual_data[5], 'r', linewidth=1)
+    ax[1, 1].plot(time_space,reformat_desired_data[5], 'b', linewidth=1)
     ax[1, 1].set_title(f"Joint {5}")
 
-    ax[1, 2].plot(reformat_actual_data[6], 'r', linewidth=1)
-    ax[1, 2].plot(reformat_desired_data[6], 'b', linewidth=1)
+    ax[1, 2].plot(time_space,reformat_actual_data[6], 'r', linewidth=1)
+    ax[1, 2].plot(time_space,reformat_desired_data[6], 'b', linewidth=1)
     ax[1, 2].set_title(f"Joint {6}")
 
-    ax[1, 3].plot(distance_data, 'g', linewidth=1)
+    ax[1, 3].plot(time_space,distance_data, 'g', linewidth=1)
 
     fig.legend(['Actual', 'Desired'])
+    fig.canvas.set_window_title(title)
 
-    plt.show()
+    return fig, ax
+
+    # plt.show()
 
 
-class FakePR2:
-
-    r"""
-    ### Class to simulate PR2 on Swift environment
-
-    This will initialize the Swift environment with robot model without any ROS components. 
-    This model will be fed with joint states provided and update the visualization of the virtual frame . """
-
-    def __init__(self, launch_visualizer) -> None:
-
-        print('bruh1')
-        self._robot = rtb.models.PR2()
-        self._is_collapsed = False
-        self._constraints_is_set = False
-        self._virtual_pose = None
-        self._launch_visualizer = launch_visualizer
-        if self._launch_visualizer:
-            self.init_visualization()
-            self.thread = threading.Thread(target=self.timeline)
-            self.thread.start()
-
-    def timeline(self):
-        r"""
-        Timeline function to update the visualization
-        :return: None
-        """
-        self._env.launch()
-        while not self._is_collapsed:
-            self._env.step(0.1)
-
-    def set_constraints(self, virtual_pose: np.ndarray):
-        r"""
-        Set the kinematics constraints for the robot
-        :param virtual_pose: virtual pose on robot base frame
-        :return: None
-        """
-
-        self._virtual_pose = virtual_pose
-        self._joined_in_left = linalg.inv(self._robot.fkine(
-            self._robot.q, end=self._robot.grippers[1])) @ virtual_pose
-        self._joined_in_right = linalg.inv(self._robot.fkine(
-            self._robot.q, end=self._robot.grippers[0])) @ virtual_pose
-
-        self._ee_constraint = {
-            "left": self._joined_in_left,
-            "right": self._joined_in_right
-        }
-
-        self._constraints_is_set = True
-
-        return True
-
-    def set_joint_states(self, joint_states: list):
-        r"""
-        Set the joint states of the arms only
-        :param joint_states: list of joint states
-        :return: None
-        """
-        # print(joint_states)
-        right_js = reorder_values(joint_states[17:24])
-        left_js = reorder_values(joint_states[31:38])
-
-        self._robot.q[16:23] = right_js
-        self._robot.q[23:30] = left_js
-        self.q = deepcopy(self._robot.q)
-
-        if self._launch_visualizer:
-            left_constraint = np.eye(4)
-            right_constraint = np.eye(4)
-            if self._constraints_is_set:    # If the constraints are set, then update the virtual frame from the middle point between the two end-effectors
-                left_constraint = self._ee_constraint['left']
-                right_constraint = self._ee_constraint['right']
-
-            self._left_ax.T = self._robot.fkine(
-                self._robot.q, end=self._robot.grippers[1], ).A @ left_constraint
-            self._right_ax.T = self._robot.fkine(
-                self._robot.q, end=self._robot.grippers[0], ).A @ right_constraint
-
-    def init_visualization(self):
-        r"""
-        Initialize the visualization of the robot
-
-        :return: None
-        """
-        print('bruh')
-
-        if not self._constraints_is_set:    # If the constraints are not set, then visualize the virtual frame from each arm end-effector
-            self._left_ax = geometry.Axes(length=0.05, pose=self._robot.fkine(
-                self._robot.q, end=self._robot.grippers[1], ).A)
-            self._right_ax = geometry.Axes(length=0.05, pose=self._robot.fkine(
-                self._robot.q, end=self._robot.grippers[0], ).A)
-        else:                           # If the constraints are set, then visualize the virtual frame from the middle point between the two end-effectors
-            self._left_ax = geometry.Axes(length=0.05, pose=self._robot.fkine(
-                self._robot.q, end=self._robot.grippers[1], ).A @ self._joined_in_left)
-            self._right_ax = geometry.Axes(length=0.05, pose=self._robot.fkine(
-                self._robot.q, end=self._robot.grippers[0], ).A @ self._joined_in_right)
-
-        print('brhu2')
-
-        # self._env.add(self._robot)
-        # self._env.add(self._left_ax)
-        # self._env.add(self._right_ax)
-
-    def get_virtual_pose(self):
-        r"""
-        Get the virtual pose of the robot
-        :return: virtual pose
-        """
-        return self._virtual_pose
-
-    def get_tool_pose(self, side):
-        r"""
-        Get the tool pose of the robot
-        :param side: side of the robot
-
-        :return: tool pose
-        """
-        if side == 'left':
-            return self._robot.fkine(self._robot.q, end=self._robot.grippers[1], ).A @ self._ee_constraint[side] if self._constraints_is_set else self._robot.fkine(self._robot.q, end=self._robot.grippers[1], ).A
-        elif side == 'right':
-            return self._robot.fkine(self._robot.q, end=self._robot.grippers[0], ).A @ self._ee_constraint[side] if self._constraints_is_set else self._robot.fkine(self._robot.q, end=self._robot.grippers[0], ).A
-        else:
-            return None
-
-    def get_jacobian(self, side):
-        r"""
-        Get the Jacobian of the robot on the tool frame
-        :param side: side of the robot
-
-        :return: Jacobian
-        """
-        tool = sm.SE3(self._ee_constraint[side]) if self._constraints_is_set else None
-
-        if side == 'left':
-            return self._robot.jacobe(self._robot.q, end=self._robot.grippers[1], start="l_shoulder_pan_link", tool=tool)
-        elif side == 'right':
-            return self._robot.jacobe(self._robot.q, end=self._robot.grippers[0], start="r_shoulder_pan_link", tool=tool)
-        else:
-            return None
-
-    def shutdown(self):
-        r"""
-        Get the joint states of the robot
-        :return: joint states
-        """
-        print("Fake PR2 is collapsed")
-        if self._launch_visualizer:
-            self._is_collapsed = True
-            self.thread.join()

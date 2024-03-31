@@ -22,23 +22,23 @@ pr2_joint_group_vel_controller:
   gains:
     r_shoulder_pan_joint:
       &shoulder_pan_joint_gains {
-        p: 30,
-        i: 4.67,
+        p: 200,
+        i: 9.67,
         d: 0.0,
         i_clamp: 100.0
       }
     r_shoulder_lift_joint:
       &shoulder_lift_joint_gains {
-        p: 30.0,
-        i: 5.67,
-        d: 0,
+        p: 200.0,
+        i: 7.67,
+        d: 0.0,
         i_clamp: 100.0
       }
     r_upper_arm_roll_joint:
       &upper_arm_roll_joint_gains {
-        p: 7,
-        i: 42.9,
-        d: 0,
+        p: 8,
+        i: 12.9,
+        d: 0.15,
         i_clamp: 100.0
       }
     r_elbow_flex_joint:
