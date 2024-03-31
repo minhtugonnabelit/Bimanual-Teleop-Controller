@@ -7,7 +7,7 @@ from scipy import linalg
 from copy import deepcopy
 import threading
 
-from utility import reorder_values
+from bimanual_controller.utility import *
 
 
 class FakePR2:

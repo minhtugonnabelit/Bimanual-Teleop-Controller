@@ -162,9 +162,8 @@ include_directories(
 catkin_install_python(PROGRAMS
   scripts/hydra_reader.py
   # scripts/pr2_gazebo_test.py
-  # scripts/pr2_gazebo_vel_single_joint.py
-  # scripts/utility.py
-  # scripts/pr2_bimanual_controller.py
+  # src/bimanual_controller/utility.py
+  src/bimanual_controller/fakePR2.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

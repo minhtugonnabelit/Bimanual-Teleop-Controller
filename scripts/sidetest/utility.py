@@ -11,9 +11,7 @@ from copy import deepcopy
 import math
 import pygame
 import sys
-# import time
 import matplotlib.pyplot as plt
-from enum import Enum
 
 
 def joy_init():

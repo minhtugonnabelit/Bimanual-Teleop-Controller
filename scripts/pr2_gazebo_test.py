@@ -4,15 +4,19 @@ from std_msgs.msg import Float64MultiArray, Float64
 from sensor_msgs.msg import JointState, Joy
 from geometry_msgs.msg import TwistStamped
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+from pr2_mechanism_msgs.srv import SwitchController, LoadController
 
+import numpy as np
 import spatialmath as sm
 import roboticstoolbox as rtb
+import matplotlib.pyplot as plt
 import time
+from enum import Enum
 from scipy import linalg, optimize
 
 # Import custom utility functions
-from utility import *
-from fakePR2 import FakePR2
+from bimanual_controller.utility import *
+from bimanual_controller.fakePR2 import FakePR2
 
 
 SAMPLE_STATES = {
@@ -95,7 +99,7 @@ class PR2BiCoor:
         self._joy_msg = None
         self._joystick_sub = rospy.Subscriber(
             '/joy', Joy, self._joystick_callback)
-        
+
         self._vel_cmd_msg = None
         self._vel_cmd_sub = rospy.Subscriber(
             'pr2_joint_group_vel_controller/command', Float64MultiArray, self._velocities_command_callback)
@@ -111,8 +115,6 @@ class PR2BiCoor:
         #     'right': rospy.Subscriber(
         #         '/r_arm_servo_server/delta_twist_cmds', TwistStamped, self._twist_callback, callback_args='right')
         # }
-
-
 
         # Initialize the transform listener
         self._tf_listener = tf.TransformListener()
@@ -202,14 +204,13 @@ class PR2BiCoor:
                                SAMPLE_STATES['right'], 1)
         self.send_traj_command('left', CONTROL_MODE.POSITION,
                                SAMPLE_STATES['left'], 1)
-        
 
     def teleop_test(self):
         r"""
         This test control loop function is used to perform coordination control on PR2 arms using single PS4 Joystick
         """
 
-        rospy.loginfo('start teleop')
+        rospy.loginfo('Start teleop')
         rospy.wait_for_message('/joy', Joy)
         while not rospy.is_shutdown():
 
@@ -217,7 +218,11 @@ class PR2BiCoor:
                 self.move_to_neutral()
 
             if (self._joy_msg[1][4] * self._joy_msg[1][5]) and not self._constraint_is_set:
+
                 self._constraint_is_set, _ = self.set_kinematics_constraints()
+                rospy.loginfo('Constraint is set, switching controllers')
+                rospy.sleep(1)
+
 
             if self._constraint_is_set:
 
@@ -375,10 +380,9 @@ class PR2BiCoor:
         self._qdot_record['left']['desired'].append(msg.data[7:])
         self._qdot_record['left']['actual'].append(
             reorder_values(self._joint_states.velocity[31:38]))
-        
-        self._offset_distance.append(np.linalg.norm(self._virtual_robot.get_tool_pose(
-                    'left')[:3, -1] - self._virtual_robot.get_tool_pose('right')[:3, -1]))
 
+        self._offset_distance.append(np.linalg.norm(self._virtual_robot.get_tool_pose(
+            'left')[:3, -1] - self._virtual_robot.get_tool_pose('right')[:3, -1]))
 
     def _twist_callback(self, msg: TwistStamped, side: str):
         r"""
@@ -389,10 +393,46 @@ class PR2BiCoor:
         """
 
         self._twist_msg[side] = msg
+
+    # Service call function
+    @staticmethod
+    def _call(service_name: str, service_type: str, **kwargs):
+        r"""
+        Call the service
+        :param service_name: name of the service
+        :param service_type: type of the service
+        :param kwargs: additional arguments
+        :return: bool value of the service call
+        """
+        rospy.wait_for_service(service_name)
+        try:
+            service = rospy.ServiceProxy(service_name, service_type)
+            response = service(**kwargs)
+            return response.ok
+        except rospy.ServiceException as e:
+            rospy.logerr(f"Service call failed: {e}")
+
+    def switch_controller(self):
+        r"""
+        Switch the controllers
+        :return: bool value of the service call
+        """
+
+        load = PR2BiCoor._call('pr2_controller_manager/load_controller',
+                        LoadController,
+                        name='pr2_joint_group_vel_controller')
+        switched = PR2BiCoor._call('pr2_controller_manager/switch_controller',
+                        SwitchController,
+                        start_controllers=[
+                            'pr2_joint_group_vel_controller',],
+                        stop_controllers=['l_arm_controller',
+                                            'r_arm_controller'],
+                        strictness=2)
         
+        return switched
 
     # Clean up function
-        
+
     def _clean(self):
         r"""
         Clean up function with dedicated shutdown procedure"""

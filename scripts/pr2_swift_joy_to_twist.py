@@ -8,7 +8,7 @@ import roboticstoolbox as rtb
 from swift import Swift
 
 # Import custom utility functions
-from utility import *
+from bimanual_controller.utility import *
 
 pr2 = rtb.models.PR2()
 qtest = np.zeros(31)
