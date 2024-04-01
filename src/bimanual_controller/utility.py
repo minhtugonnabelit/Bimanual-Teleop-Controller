@@ -174,9 +174,9 @@ def duo_arm_qdot_constraint(jacob_l, jacob_r, twist, activate_nullspace=True):
     qdot_left = rmrc(jacob_l, twist, )
     qdot_right = rmrc(jacob_r, twist, )
     # Combine the joint velocities of the left and right arms
-    qdotc = np.concatenate([qdot_left, qdot_right], axis=0)
+    qdotc = np.r_[qdot_left, qdot_right]
     # Combine the Jacobians of the left and right arms
-    jacob_c = np.concatenate([jacob_l, -jacob_r], axis=1)
+    jacob_c = np.c_[jacob_l, -jacob_r]
 
     if activate_nullspace:
         qdotc = nullspace_projection(jacob_c) @ qdotc
@@ -273,6 +273,8 @@ def animate_frame(tf, quivers, text, ax):
 
     return add_frame_to_plot(ax, tf)
 
+def map_interval(x):
+    return 0.03 * (x + 1)
 
 def reorder_values(data):
     r"""

@@ -5,6 +5,7 @@ from sensor_msgs.msg import JointState, Joy
 from geometry_msgs.msg import TwistStamped
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from pr2_mechanism_msgs.srv import SwitchController, LoadController
+from pr2_controllers_msgs.msg import Pr2GripperCommand
 
 import numpy as np
 import spatialmath as sm
@@ -89,6 +90,11 @@ class PR2BiCoor:
 
         self._joint_group_vel_pub = rospy.Publisher(
             'pr2_joint_group_vel_controller/command', Float64MultiArray, queue_size=1)
+        
+        self._gripper_cmd_pub = {
+            'right' : rospy.Publisher('r_gripper_controller/command', Pr2GripperCommand, queue_size=1),
+            'left' : rospy.Publisher('l_gripper_controller/command', Pr2GripperCommand, queue_size=1)
+        }
 
         # Initialize the joint states subscriber
         self._joint_states = None
@@ -115,6 +121,8 @@ class PR2BiCoor:
         #     'right': rospy.Subscriber(
         #         '/r_arm_servo_server/delta_twist_cmds', TwistStamped, self._twist_callback, callback_args='right')
         # }
+
+
 
         # Initialize the transform listener
         self._tf_listener = tf.TransformListener()
@@ -205,7 +213,7 @@ class PR2BiCoor:
         self.send_traj_command('left', CONTROL_MODE.POSITION,
                                SAMPLE_STATES['left'], 1)
 
-    def teleop_test(self):
+    def bmcp_teleop(self):
         r"""
         This test control loop function is used to perform coordination control on PR2 arms using single PS4 Joystick
         """
@@ -221,12 +229,23 @@ class PR2BiCoor:
                 self.move_to_neutral()
 
 
-            if (self._joy_msg[1][4] * self._joy_msg[1][5]) and not self._constraint_is_set:
+            if (self._joy_msg[1][-1] * self._joy_msg[1][-2]) and not self._constraint_is_set:
 
                 self._constraint_is_set, _ = self.set_kinematics_constraints()
                 rospy.loginfo('Constraint is set, switching controllers')
                 rospy.sleep(1)
                 PR2BiCoor._start_jg_vel_controller()
+
+            if not self._constraint_is_set:
+
+                gripper_sides = {5: 'right', 4: 'left'}
+
+                for button_index, side in gripper_sides.items():
+                    if self._joy_msg[1][button_index]:
+                        if self._joy_msg[0][-1] == 1:
+                            self.open_gripper(side)
+                        elif self._joy_msg[0][-1] == -1:
+                            self.close_gripper(side)
 
 
             if self._constraint_is_set:
@@ -278,15 +297,6 @@ class PR2BiCoor:
 
         pass
 
-    def home(self):
-        r"""
-        Move the robot to home position
-        :return: None
-        """
-        while not rospy.is_shutdown():
-            self.move_to_neutral()
-            self._rate.sleep()
-
     def path_trakcing_test(self):
 
         updated_joined_left = self._virtual_robot.get_tool_pose('left')
@@ -331,14 +341,6 @@ class PR2BiCoor:
                 qdot = np.concatenate([qdot_r, qdot_l])
                 msg = PR2BiCoor._joint_group_command_to_msg(qdot)
                 self._joint_group_vel_pub.publish(msg)
-
-            self._qdot_record['left']['desired'].append(qdot_l)
-            self._qdot_record['left']['actual'].append(
-                reorder_values(self._joint_states.velocity[31:38]))
-
-            self._qdot_record['right']['desired'].append(qdot_r)
-            self._qdot_record['right']['actual'].append(
-                reorder_values(self._joint_states.velocity[17:24]))
 
             if arrived:
                 print('Arrived')
@@ -406,6 +408,32 @@ class PR2BiCoor:
 
         self._twist_msg[side] = msg
 
+
+    def open_gripper(self, side: str):
+        r"""
+        Close the gripper
+        :param side: side of the robot
+        :return: None
+        """
+
+        msg = Pr2GripperCommand()
+        msg.position = 0.06
+        msg.max_effort = 20.0
+        self._gripper_cmd_pub[side].publish(msg)
+
+    def close_gripper(self, side: str):
+        r"""
+        Close the gripper
+        :param side: side of the robot
+        :return: None
+        """
+
+        msg = Pr2GripperCommand()
+        msg.position = 0.0
+        msg.max_effort = 20.0
+        self._gripper_cmd_pub[side].publish(msg)
+
+    
     # Service call function
     @staticmethod
     def _call(service_name: str, service_type: str, **kwargs):
@@ -474,4 +502,4 @@ if __name__ == "__main__":
     rospy.init_node('bcmp_test', log_level=rospy.INFO, anonymous=True,)
     rospy.logdebug('Command node initialized')
     controller = PR2BiCoor()
-    controller.teleop_test()
+    controller.bmcp_teleop()
