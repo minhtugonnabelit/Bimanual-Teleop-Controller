@@ -1,0 +1,7 @@
+<launch>
+
+   <rosparam file="$(find bimanual_teleop_controller)/config/pr2_joint_group_velocities_controller_gazebo.yaml" command="load" />
+   <node pkg="rosservice" type="rosservice" name="load_joint_group_vel_controller" args="call /pr2_controller_manager/load_controller 'name: 'pr2_joint_group_vel_controller''"/>
+   <node pkg="bimanual_teleop_controller" type="pr2_gazebo_test.py" name="bcmp_test" output="screen"/>
+
+</launch>

@@ -212,16 +212,21 @@ class PR2BiCoor:
 
         rospy.loginfo('Start teleop')
         rospy.wait_for_message('/joy', Joy)
-        while not rospy.is_shutdown():
+
+        done = False
+        while not done:
 
             if self._joy_msg[1][-3]:
+
                 self.move_to_neutral()
+
 
             if (self._joy_msg[1][4] * self._joy_msg[1][5]) and not self._constraint_is_set:
 
                 self._constraint_is_set, _ = self.set_kinematics_constraints()
                 rospy.loginfo('Constraint is set, switching controllers')
                 rospy.sleep(1)
+                PR2BiCoor._start_jg_vel_controller()
 
 
             if self._constraint_is_set:
@@ -230,9 +235,11 @@ class PR2BiCoor:
                 qdot_l = np.zeros(7)
                 qdot_r = np.zeros(7)
 
+                twist, done = joy_to_twist(self._joy_msg, [0.3, 0.3])
                 if self._joy_msg[1][5]:
+                
                     start_time = time.time()
-                    twist, done = joy_to_twist(self._joy_msg, [0.3, 0.3])
+
                     jacob_right = self._virtual_robot.get_jacobian('right')
                     jacob_left = self._virtual_robot.get_jacobian('left')
 
@@ -243,9 +250,14 @@ class PR2BiCoor:
 
                     exec_time = time.time() - start_time
                     rospy.loginfo(f'Execution time: {exec_time}')
-
+                
                 msg = PR2BiCoor._joint_group_command_to_msg(qdot)
                 self._joint_group_vel_pub.publish(msg)
+
+
+            if done:
+                rospy.loginfo('Done')
+                rospy.signal_shutdown('Done')
 
             self._rate.sleep()
 
@@ -404,6 +416,7 @@ class PR2BiCoor:
         :param kwargs: additional arguments
         :return: bool value of the service call
         """
+        
         rospy.wait_for_service(service_name)
         try:
             service = rospy.ServiceProxy(service_name, service_type)
@@ -412,21 +425,30 @@ class PR2BiCoor:
         except rospy.ServiceException as e:
             rospy.logerr(f"Service call failed: {e}")
 
-    def switch_controller(self):
+    def _start_jg_vel_controller():
         r"""
         Switch the controllers
         :return: bool value of the service call
         """
 
-        load = PR2BiCoor._call('pr2_controller_manager/load_controller',
-                        LoadController,
-                        name='pr2_joint_group_vel_controller')
         switched = PR2BiCoor._call('pr2_controller_manager/switch_controller',
                         SwitchController,
-                        start_controllers=[
-                            'pr2_joint_group_vel_controller',],
-                        stop_controllers=['l_arm_controller',
-                                            'r_arm_controller'],
+                        start_controllers=['pr2_joint_group_vel_controller',],
+                        stop_controllers=['l_arm_controller','r_arm_controller'],
+                        strictness=2)
+        
+        return switched
+    
+    def _kill_jg_vel_controller():
+        r"""
+        Switch the controllers
+        :return: bool value of the service call
+        """
+
+        switched = PR2BiCoor._call('pr2_controller_manager/switch_controller',
+                        SwitchController,
+                        start_controllers=['l_arm_controller', 'r_arm_controller'],
+                        stop_controllers=['pr2_joint_group_vel_controller'],
                         strictness=2)
         
         return switched
@@ -439,12 +461,12 @@ class PR2BiCoor:
 
         self._virtual_robot.shutdown()
         rospy.loginfo('Shutting down the robot')
+        PR2BiCoor._kill_jg_vel_controller()
         fig1, ax1 = plot_joint_velocities(
             self._qdot_record['left']['actual'], self._qdot_record['left']['desired'], distance_data=self._offset_distance, dt=0.05, title='Left Arm')
         fig2, ax2 = plot_joint_velocities(
             self._qdot_record['right']['actual'], self._qdot_record['right']['desired'], distance_data=self._offset_distance, dt=0.05, title='Right Arm')
         plt.show()
-        # plt.close
 
 
 if __name__ == "__main__":
