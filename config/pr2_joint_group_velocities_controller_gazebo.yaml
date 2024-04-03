@@ -37,8 +37,8 @@ pr2_joint_group_vel_controller:
     r_upper_arm_roll_joint:
       &upper_arm_roll_joint_gains {
         p: 8,
-        i: 12.9,
-        d: 0.15,
+        i: 8.9,
+        d: 0.0,
         i_clamp: 100.0
       }
     r_elbow_flex_joint:

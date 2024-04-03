@@ -1,13 +1,16 @@
 <launch>
 
    <!-- joystick node -->
-   <node name="joy" pkg="joy" type="joy_node" required="true" >
-      <param name="~dev"                  value="/dev/input/js0" />
-      <param name="~deadzone"             value="0.01" />
+   <node name="joy" pkg="joy" type="joy_node" required="true">
+      <param name="~dev" value="/dev/input/js0" />
+      <param name="~deadzone" value="0.01" />
    </node>
 
-   <rosparam file="$(find bimanual_teleop_controller)/config/pr2_joint_group_velocities_controller_gazebo.yaml" command="load" />
-   <node pkg="rosservice" type="rosservice" name="load_joint_group_vel_controller" args="call /pr2_controller_manager/load_controller 'name: 'pr2_joint_group_vel_controller''"/>
+   <rosparam file="$(find bimanual_teleop_controller)/config/raw_pr2_joint_group_velocity_controllers.yaml" command="load" />
+
+   <node pkg="rosservice" type="rosservice" name="load_r_joint_group_vel_controller" args="call /pr2_controller_manager/load_controller 'name: 'r_arm_joint_group_velocity_controller''"/>
+   <node pkg="rosservice" type="rosservice" name="load_l_joint_group_vel_controller" args="call /pr2_controller_manager/load_controller 'name: 'l_arm_joint_group_velocity_controller''"/>
+   
    <node pkg="bimanual_teleop_controller" type="pr2_gazebo_test.py" name="bcmp_test" output="screen"/>
 
 </launch>
