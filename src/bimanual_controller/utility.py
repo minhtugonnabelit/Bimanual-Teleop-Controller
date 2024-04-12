@@ -363,7 +363,6 @@ def plot_joint_velocities(actual_data: np.ndarray, desired_data, distance_data, 
     ax[1, 3].plot(time_space, distance_data, 'g', linewidth=1)
 
     fig.legend(['Actual', 'Desired'])
-    fig.canvas.set_window_title(title)
 
     return fig, ax
 

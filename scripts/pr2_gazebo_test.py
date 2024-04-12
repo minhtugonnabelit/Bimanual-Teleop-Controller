@@ -98,8 +98,8 @@ class PR2BiCoor:
         self._joystick_sub = rospy.Subscriber(
             '/joy', Joy, self._joystick_callback)
 
-        # # Initialize the velocities command subscriber
-        # self._vel_cmd_msg = None
+        # Initialize the velocities command subscriber
+        self._vel_cmd_msg = None
         # self._vel_cmd_sub = rospy.Subscriber(
         #     '/joint_velocities_command', Float64MultiArray, self._velocities_command_callback)
 
@@ -108,11 +108,11 @@ class PR2BiCoor:
             'left': rospy.Subscriber('/l_arm_joint_group_velocity_controller/command', Float64MultiArray, self._l_vel_cmd_callback),
         }
 
-        # # Initialize the twist subscriber
-        # self._twist_msg = {
-        #     'left': None,
-        #     'right': None
-        # }
+        # Initialize the twist subscriber from node Hydra_reader
+        self._twist_msg = {
+            'left': None,
+            'right': None
+        }
         # self._twist_sub = {
         #     'left': rospy.Subscriber(
         #         '/l_arm_servo_server/delta_twist_cmds', TwistStamped, self._twist_callback, callback_args='left'),
@@ -141,7 +141,6 @@ class PR2BiCoor:
         rospy.loginfo('Controller ready to go')
         rospy.on_shutdown(self._clean)
 
-    # Clean up function
     def _clean(self):
         r"""
         Clean up function with dedicated shutdown procedure"""
@@ -254,7 +253,6 @@ class PR2BiCoor:
 
             if self._constraint_is_set:
 
-                # qdot = np.zeros(14)
                 qdot_r = np.zeros(7)
                 qdot_l = np.zeros(7)
                 twist, done = joy_to_twist(self._joy_msg, [0.1, 0.1])
@@ -271,23 +269,14 @@ class PR2BiCoor:
                                                                        twist,
                                                                        activate_nullspace=True)
 
-                    # qdot = np.r_[qdot_r, qdot_l]
-
                     exec_time = time.time() - start_time
-                    rospy.loginfo(f'Execution time: {exec_time}')
+                    rospy.loginfo(f'Calculation time: {exec_time}')
 
-                # r_msg = PR2BiCoor._joint_group_command_to_msg(qdot_r)
                 self._arms_vel_controller_pub['right'].publish(
                     PR2BiCoor._joint_group_command_to_msg(qdot_r))
 
-                # l_msg = PR2BiCoor._joint_group_command_to_msg(qdot_l)
                 self._arms_vel_controller_pub['left'].publish(
                     PR2BiCoor._joint_group_command_to_msg(qdot_l))
-
-                # msg = PR2BiCoor._joint_group_command_to_msg(qdot)
-                # self._joint_group_vel_pub.publish(msg)
-
-                # self._joint_traj_to_msg(qdot)
 
             if done:
                 rospy.loginfo('Done teleoperation.')
@@ -402,13 +391,13 @@ class PR2BiCoor:
 
         self._qdot_record['right']['desired'].append(msg.data)
         self._qdot_record['right']['actual'].append(
-            reorder_values(self._joint_states.velocity[17:24]))
+            reorder_values(self._joint_states.effort[17:24]))
 
     def _l_vel_cmd_callback(self, msg: Float64MultiArray):
 
         self._qdot_record['left']['desired'].append(msg.data)
         self._qdot_record['left']['actual'].append(
-            reorder_values(self._joint_states.velocity[31:38]))
+            reorder_values(self._joint_states.effort[31:38]))
 
         self._offset_distance.append(np.linalg.norm(self._virtual_robot.get_tool_pose(
             'left')[:3, -1] - self._virtual_robot.get_tool_pose('right')[:3, -1]))
@@ -423,7 +412,7 @@ class PR2BiCoor:
         """
 
         msg = Pr2GripperCommand()
-        msg.position = 0.06
+        msg.position = 0.08
         msg.max_effort = 10.0
         self._gripper_cmd_pub[side].publish(msg)
 
@@ -519,6 +508,7 @@ class PR2BiCoor:
         msg.data = values
         return msg
 
+    @staticmethod
     def _create_joint_trajectory(self, joint_names: list, joint_states: list, values: list):
 
         joint_traj = JointTrajectory()
