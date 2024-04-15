@@ -4,14 +4,47 @@ import spatialmath.base as smb
 import spatialgeometry as geometry
 import roboticstoolbox as rtb
 from scipy import linalg, optimize
-from swift import Swift
 
-import threading
 from copy import deepcopy
 import math
 import pygame
 import sys
 import matplotlib.pyplot as plt
+
+
+# Constants
+
+TWIST_GAIN = [0.3, 0.3]
+CONTROL_RATE = 10
+SAMPLE_STATES = {
+    'left': [np.pi/4, np.pi/6, np.pi/2, -np.pi/2, np.pi/6, -np.pi/4, np.pi/2],
+    'right': [-np.pi/4, np.pi/6, -np.pi/2, -np.pi/2, -np.pi/6, -np.pi/4, np.pi/2]
+}
+NEUTRAL_STATES = {
+    'left': [0.05592020315366142, 0.4115547023030020313, 1.223241480964399752, -0.75718229886988179, 0.25000010026008326, -0.48229593735634957, 1.573265592638103776],
+    'right': [-0.05869937106810763, 0.4107752715756987882, -1.223126457438489645, -0.75897762731364821, -0.25000005892831325, -0.4851061342000067, -1.5713531640700703562,]
+}
+JOINT_NAMES = {
+    "left": [
+        "l_shoulder_pan_joint",
+        "l_shoulder_lift_joint",
+        "l_upper_arm_roll_joint",
+        "l_elbow_flex_joint",
+        "l_forearm_roll_joint",
+        "l_wrist_flex_joint",
+        "l_wrist_roll_joint",
+    ],
+    "right": [
+        "r_shoulder_pan_joint",
+        "r_shoulder_lift_joint",
+        "r_upper_arm_roll_joint",
+        "r_elbow_flex_joint",
+        "r_forearm_roll_joint",
+        "r_wrist_flex_joint",
+        "r_wrist_roll_joint",
+    ]
+}
+
 
 class CalcFuncs():
 
@@ -43,7 +76,6 @@ class CalcFuncs():
         """
 
         return np.sqrt(np.linalg.det(jacob @ np.transpose(jacob)))
-
 
     def rmrc(jacob, twist):
         r"""
@@ -90,7 +122,6 @@ class CalcFuncs():
 
         return np.eye(jacob.shape[1]) - np.linalg.pinv(jacob) @ jacob
 
-
     def duo_arm_qdot_constraint(jacob_l, jacob_r, twist, activate_nullspace=True):
         r"""
         Calculate the joint velocities using the Resolved Motion Rate Control (RMRC) method for a dual-arm robot.
@@ -112,7 +143,6 @@ class CalcFuncs():
 
         return qdot_l, qdot_r
 
-
     def angle_axis_python(T, Td):
         r"""
         Computes the angle-axis representation of the error between two transformation matrices.
@@ -129,7 +159,8 @@ class CalcFuncs():
         e = np.empty(6)
         e[:3] = Td[:3, -1] - T[:3, -1]
         R = Td[:3, :3] @ T[:3, :3].T
-        li = np.array([R[2, 1] - R[1, 2], R[0, 2] - R[2, 0], R[1, 0] - R[0, 1]])
+        li = np.array([R[2, 1] - R[1, 2], R[0, 2] -
+                      R[2, 0], R[1, 0] - R[0, 1]])
         ln = smb.norm(li)
 
         if smb.iszerovec(li):
@@ -180,11 +211,11 @@ class AnimateFuncs():
         # Plotting each axis using quiver for direction visualization
         quivers = []
         quivers.append(ax.quiver(*origin, *x_dir, color='r',
-                    length=0.15, linewidth=1, normalize=True))
+                                 length=0.15, linewidth=1, normalize=True))
         quivers.append(ax.quiver(*origin, *y_dir, color='g',
-                    length=0.15, linewidth=1, normalize=True))
+                                 length=0.15, linewidth=1, normalize=True))
         quivers.append(ax.quiver(*origin, *z_dir, color='b',
-                    length=0.15, linewidth=1, normalize=True))
+                                 length=0.15, linewidth=1, normalize=True))
 
         # Optionally adding a label to the frame
         text = None
@@ -192,7 +223,6 @@ class AnimateFuncs():
             text = ax.text(*origin.flatten(), label, fontsize=12)
 
         return quivers, text
-
 
     def animate_frame(tf, quivers, text, ax):
 
@@ -223,6 +253,7 @@ def joy_init():
         joystick.init()
 
     return joystick
+
 
 def joy_to_twist(joy, gain):
     r"""
@@ -273,7 +304,6 @@ def joy_to_twist(joy, gain):
         r = lpf(joy[0][3])
         p = lpf(joy[0][4])
 
-
     # ---------------------------------------------------------------------------#
     twist = np.zeros(6)
     twist[:3] = np.array([vx, vy, vz]) * gain[0]
@@ -281,12 +311,13 @@ def joy_to_twist(joy, gain):
 
     return twist, done
 
-def lpf(value, thresh=0.2):
+
+def lpf(value, threshold=0.2):
     r"""
     Low pass filter for the joystick data.
     """
 
-    return value if abs(value) > thresh else 0
+    return value if abs(value) > threshold else 0
 
 
 def map_interval(x):
@@ -315,55 +346,56 @@ def reorder_values(data):
     return data_array.tolist()
 
 
-def plot_joint_velocities(actual_data: np.ndarray, desired_data, distance_data, dt=0.1, title='Joint Velocities'):
+def plot_joint_velocities(actual_data: np.ndarray, desired_data: np.ndarray, distance_data: np.ndarray, dt=0.1, title='Joint Velocities'):
 
-    fig, ax = plt.subplots(2, 4)
+    actual_data = np.array(actual_data)
+    desired_data = np.array(desired_data)
+    distance_data = np.array(distance_data)
 
-    reformat_actual_data = []
-    reformat_desired_data = []
+    # Adjusted figsize for better visibility
+    fig, ax = plt.subplots(2, 4, figsize=(18, 10))
 
-    # Transpose the actual and desired data lists to group by joints instead of iterations
-    transposed_actual_data = list(zip(*actual_data))
-    transposed_desired_data = list(zip(*desired_data))
+    # Prepare data
+    time_space = np.linspace(0, len(actual_data) * dt, len(actual_data))
 
-    for actual_joint_velocities, desired_joint_velocities in zip(transposed_actual_data, transposed_desired_data):
-        reformat_actual_data.append(list(actual_joint_velocities))
-        reformat_desired_data.append(list(desired_joint_velocities))
+    # Plot settings
+    colors = ['r', 'b']  # Red for actual, Blue for desired
+    labels = ['Actual', 'Desired']
+    data_types = [actual_data, desired_data]
 
-    time_space = np.linspace(0, len(actual_data)*dt, len(actual_data))
+    for i in range(7):  # Assuming there are 7 joints
+        joint_axes = ax[i // 4, i % 4]
+        for data, color, label in zip(data_types, colors, labels):
+            joint_data = data[:, i]
+            joint_axes.plot(time_space, joint_data, color,
+                            linewidth=1, label=label if i == 0 else "")
 
-    ax[0, 0].plot(time_space, reformat_actual_data[0], 'r', linewidth=1)
-    ax[0, 0].plot(time_space, reformat_desired_data[0], 'b', linewidth=1)
-    ax[0, 0].set_title(f"Joint {0}")
+            # Max and Min annotations
+            max_value = np.max(joint_data)
+            min_value = np.min(joint_data)
+            max_time = time_space[np.argmax(joint_data)]
+            min_time = time_space[np.argmin(joint_data)]
 
-    ax[0, 1].plot(time_space, reformat_actual_data[1], 'r', linewidth=1)
-    ax[0, 1].plot(time_space, reformat_desired_data[1], 'b', linewidth=1)
-    ax[0, 1].set_title(f"Joint {1}")
+            joint_axes.annotate(f'Max: {max_value:.2f}', xy=(max_time, max_value), xytext=(10, 0),
+                                textcoords='offset points', ha='center', va='bottom', color=color)
+            joint_axes.annotate(f'Min: {min_value:.2f}', xy=(min_time, min_value), xytext=(10, -10),
+                                textcoords='offset points', ha='center', va='top', color=color)
 
-    ax[0, 2].plot(time_space, reformat_actual_data[2], 'r', linewidth=1)
-    ax[0, 2].plot(time_space, reformat_desired_data[2], 'b', linewidth=1)
-    ax[0, 2].set_title(f"Joint {2}")
+        joint_axes.set_title(JOINT_NAMES[title][i])
 
-    ax[0, 3].plot(time_space, reformat_actual_data[3], 'r', linewidth=1)
-    ax[0, 3].plot(time_space, reformat_desired_data[3], 'b', linewidth=1)
-    ax[0, 3].set_title(f"Joint {3}")
+    # Plot for distance data in the last subplot
+    distance_axes = ax[1, 3]
+    distance_axes.plot(time_space, distance_data, 'g', linewidth=1)
+    distance_axes.set_title("Distance Data")
+    distance_axes.annotate('Max', xy=(time_space[np.argmax(distance_data)], np.max(distance_data)),
+                           xytext=(10, 0), textcoords='offset points', ha='center', va='bottom')
+    distance_axes.annotate('Min', xy=(time_space[np.argmin(distance_data)], np.min(distance_data)),
+                           xytext=(10, -10), textcoords='offset points', ha='center', va='top')
 
-    ax[1, 0].plot(time_space, reformat_actual_data[4], 'r', linewidth=1)
-    ax[1, 0].plot(time_space, reformat_desired_data[4], 'b', linewidth=1)
-    ax[1, 0].set_title(f"Joint {4}")
-
-    ax[1, 1].plot(time_space, reformat_actual_data[5], 'r', linewidth=1)
-    ax[1, 1].plot(time_space, reformat_desired_data[5], 'b', linewidth=1)
-    ax[1, 1].set_title(f"Joint {5}")
-
-    ax[1, 2].plot(time_space, reformat_actual_data[6], 'r', linewidth=1)
-    ax[1, 2].plot(time_space, reformat_desired_data[6], 'b', linewidth=1)
-    ax[1, 2].set_title(f"Joint {6}")
-
-    ax[1, 3].plot(time_space, distance_data, 'g', linewidth=1)
-
-    fig.legend(['Actual', 'Desired'])
+    fig.legend(['Actual', 'Desired'], loc='upper right')
+    fig.suptitle(title)
+    # Adjust layout to make room for the title
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.show()
 
     return fig, ax
-
-    # plt.show()

@@ -13,4 +13,4 @@
    
    <node pkg="bimanual_teleop_controller" type="pr2_gazebo_test.py" name="bcmp_test" output="screen"/>
 
-</launch>
+</launch>   

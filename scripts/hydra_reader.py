@@ -49,8 +49,8 @@ class HydraTwist():
         The gain is set to 0 if the right trigger is not pressed.\n
         """
 
-        # if msg.buttons[3] == 1:
-        #     self._handle_arm_switch()
+        if msg.buttons[3] == 1:
+            self._handle_arm_switch()
 
         self._linear_gain = msg.axes[self._trigger_index] * self._MAX_LIN_GAIN if msg.buttons[self._trigger_index] == 1 else 0
         self._angular_gain = msg.axes[self._trigger_index] * self._MAX_ANG_GAIN if msg.buttons[self._trigger_index] == 1 else 0
@@ -71,14 +71,14 @@ class HydraTwist():
         The arms are switched by pressing the left trigger of the hydra joystick.\n
         The arms are switched by changing the topic of the current twist publisher.\n
         """
-        pass
+        # pass
 
-        # if self._switched:
-        #     self._current_twist_pub = self._right_twist_pub
-        #     self._switched = False
-        # else:
-        #     self._current_twist_pub = self._left_twist_pub
-        #     self._switched = True
+        if self._switched:
+            self._current_twist_pub = self._right_twist_pub
+            self._switched = False
+        else:
+            self._current_twist_pub = self._left_twist_pub
+            self._switched = True
 
 
     def _twist_to_twist_stamped_msg(self, controller_frame_id, base_frame_id, lin_gain, ang_gain, time_diff=0.1):

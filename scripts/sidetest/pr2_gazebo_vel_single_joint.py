@@ -183,12 +183,6 @@ class PR2VelControl():
                 for i in range(7):
                     qdot[i] = V * dir * self._joy[1][i]
 
-            # if not (self._joy[1][4] + self._joy[1][5]): qdot = np.zeros(14)
-
-
-            # msg = self._command_to_mg(qdot) 
-            # self._pub.publish(msg)
-
 
             self._pub['right'].publish(self._command_to_mg(qdot[:7])) 
             self._pub['left'].publish(self._command_to_mg(qdot[7:])) 

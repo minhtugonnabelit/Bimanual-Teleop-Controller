@@ -68,7 +68,7 @@ class FakePR2:
 
         return True
 
-    def set_joint_states(self, joint_states: list):
+    def set_states(self, joint_states: list):
         r"""
         Set the joint states of the arms only
         :param joint_states: list of joint states
@@ -87,7 +87,7 @@ class FakePR2:
             self._left_ax.T = self._robot.fkine(
                 self._robot.q, end=self._arms_frame['left']['end'], tool=self._tool_offset['left']).A
             self._right_ax.T = self._robot.fkine(
-                self._robot.q, end=self._robot.grippers['right']['end'], tool=self._tool_offset['right']).A
+                self._robot.q, end=self._arms_frame['right']['end'], tool=self._tool_offset['right']).A
 
     def init_visualization(self):
         r"""
@@ -102,19 +102,21 @@ class FakePR2:
         self._right_ax = geometry.Axes(length=0.05, pose=self._robot.fkine(
             self._robot.q, end=self._arms_frame['right']['end'], tool=self._tool_offset['right']).A)
 
-        # self._env.add(self._robot)
-        # self._env.add(self._left_ax)
-        # self._env.add(self._right_ax)
+        self._env.add(self._robot)
+        self._env.add(self._left_ax)
+        self._env.add(self._right_ax)
 
-    def get_tool_pose(self, side):
+    def get_tool_pose(self, side, offset=True):
         r"""
         Get the tool pose of the robot
         :param side: side of the robot
+        :param offset: include tool offset or not
 
         :return: tool pose
         """
+        tool = self._tool_offset[side] if offset else np.eye(4)
 
-        return self._robot.fkine(self._robot.q, end=self._arms_frame[side]['end'], tool=self._tool_offset[side]).A
+        return self._robot.fkine(self._robot.q, end=self._arms_frame[side]['end'], tool=tool).A
 
     def get_jacobian(self, side):
         r"""
@@ -131,7 +133,6 @@ class FakePR2:
         Get the joint states of the robot
         :return: joint states
         """
-        print("Fake PR2 is collapsed")
         if self._launch_visualizer:
             self._is_collapsed = True
             self._thread.join()
