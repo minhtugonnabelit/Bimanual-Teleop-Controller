@@ -117,6 +117,16 @@ class FakePR2:
         tool = self._tool_offset[side] if offset else np.eye(4)
 
         return self._robot.fkine(self._robot.q, end=self._arms_frame[side]['end'], tool=tool).A
+    
+    def get_joint_positions(self, side : str):
+        r"""
+        Get the joint states of the robot
+        :return: joint states
+        """
+        if side == 'left':
+            return self._robot.q[23:30]
+        else:
+            return self._robot.q[16:23]
 
     def get_jacobian(self, side):
         r"""

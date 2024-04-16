@@ -1,6 +1,6 @@
 import tf
 import rospy
-from std_msgs.msg import Float64MultiArray, Float64
+from std_msgs.msg import Float64MultiArray
 from sensor_msgs.msg import JointState, Joy
 from geometry_msgs.msg import TwistStamped
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
@@ -14,48 +14,46 @@ import matplotlib.pyplot as plt
 import time
 from scipy import linalg, optimize
 
-# Import custom utility functions
 from bimanual_controller.utility import *
 from bimanual_controller.fakePR2 import FakePR2
 
+
 class PR2Controller:
+    r"""
+    Class to control the PR2 robot 
+    """
 
     def __init__(self, rate):
 
         # Initialize the robot model to handle constraints and calculate Jacobians
-        self._virtual_robot = FakePR2(launch_visualizer=True)
+        self._virtual_robot = FakePR2(launch_visualizer=False)
         self._rate = rospy.Rate(rate)
         self._dt = 1/rate
-
-        self._qdot_msg = {
-            'left': np.zeros(7),
-            'right': np.zeros(7)
-        }
 
         # Initialize the buffer for the joint velocities recording
         self._qdot_record = {
             'left': {'desired': [],  'actual': []},
             'right': {'desired': [],  'actual': []}
         }
-
         self._offset_distance = []
         self._constraint_is_set = False
-
-        # Initialize arms trajectory controllers publishers
-        self._arm_control_pub = {
-            'left': rospy.Publisher('l_arm_controller/command', JointTrajectory, queue_size=1),
-            'right': rospy.Publisher('r_arm_controller/command', JointTrajectory, queue_size=1)
-        }
-
-        self._arms_vel_controller_pub = {
-            'right': rospy.Publisher('/r_arm_joint_group_velocity_controller/command', Float64MultiArray, queue_size=1),
-            'left': rospy.Publisher('/l_arm_joint_group_velocity_controller/command', Float64MultiArray, queue_size=1)
-        }
 
         # Initialize the gripper command publishers
         self._gripper_cmd_pub = {
             'right': rospy.Publisher('r_gripper_controller/command', Pr2GripperCommand, queue_size=1),
             'left': rospy.Publisher('l_gripper_controller/command', Pr2GripperCommand, queue_size=1)
+        }
+
+        # Initialize arms trajectory controllers publishers
+        self._arm_traj_control_pub = {
+            'left': rospy.Publisher('l_arm_controller/command', JointTrajectory, queue_size=1),
+            'right': rospy.Publisher('r_arm_controller/command', JointTrajectory, queue_size=1)
+        }
+
+        # Initialize the joint group velocity controller publisher
+        self._arms_vel_controller_pub = {
+            'right': rospy.Publisher('/r_arm_joint_group_velocity_controller/command', Float64MultiArray, queue_size=1),
+            'left': rospy.Publisher('/l_arm_joint_group_velocity_controller/command', Float64MultiArray, queue_size=1)
         }
 
         # Initialize the joint states subscriber
@@ -68,28 +66,9 @@ class PR2Controller:
         self._joystick_sub = rospy.Subscriber(
             '/joy', Joy, self._joystick_callback)
 
-        # # Initialize the velocities command subscriber
-        # self._vel_cmd_sub = {
-        #     'right': rospy.Subscriber('/r_arm_joint_group_velocity_controller/command', Float64MultiArray, self._r_vel_cmd_callback),
-        #     'left': rospy.Subscriber('/l_arm_joint_group_velocity_controller/command', Float64MultiArray, self._l_vel_cmd_callback),
-        # }
-
-        # Initialize the twist subscriber from node Hydra_reader
-        # self._twist_msg = {
-        #     'left': None,
-        #     'right': None
-        # }
-        # self._twist_sub = {
-        #     'left': rospy.Subscriber(
-        #         '/l_arm_servo_server/delta_twist_cmds', TwistStamped, self._twist_callback, callback_args='left'),
-        #     'right': rospy.Subscriber(
-        #         '/r_arm_servo_server/delta_twist_cmds', TwistStamped, self._twist_callback, callback_args='right')
-        # }
-
         # Initialize the transform listener
         self._tf_listener = tf.TransformListener()
         self._tf_broadcaster = tf.TransformBroadcaster()
-
 
         rospy.loginfo('Controller ready to go')
         rospy.on_shutdown(self._clean)
@@ -110,20 +89,30 @@ class PR2Controller:
     def set_kinematics_constraints(self):
         r"""
         Set the kinematics constraints for the robot
-        :return: None
+        :return: bool value of the service call and the virtual pose
         """
         tf.TransformListener().waitForTransform(
             'base_link', 'l_gripper_tool_frame', rospy.Time(), rospy.Duration(4.0))
 
         left_pose = self._tf_listener.lookupTransform(
-            'base_footprint', 'l_gripper_tool_frame', rospy.Time(0))
+            'base_footprint',
+            'l_gripper_tool_frame',
+            rospy.Time(0))
+
         left_pose = tf.TransformerROS.fromTranslationRotation(
-            tf.TransformerROS, translation=left_pose[0], rotation=left_pose[1])
+            tf.TransformerROS,
+            translation=left_pose[0],
+            rotation=left_pose[1])
 
         right_pose = self._tf_listener.lookupTransform(
-            'base_footprint', 'r_gripper_tool_frame', rospy.Time(0))
+            'base_footprint',
+            'r_gripper_tool_frame',
+            rospy.Time(0))
+
         right_pose = tf.TransformerROS.fromTranslationRotation(
-            tf.TransformerROS, translation=right_pose[0], rotation=right_pose[1])
+            tf.TransformerROS,
+            translation=right_pose[0],
+            rotation=right_pose[1])
 
         virtual_pose = np.eye(4)
         virtual_pose[:3, -1] = (left_pose[:3, -1] + right_pose[:3, -1]) / 2
@@ -136,9 +125,9 @@ class PR2Controller:
         Move the robot to neutral position
         :return: None
         """
-        self._arm_control_pub['right'].publish(
+        self._arm_traj_control_pub['right'].publish(
             PR2Controller._create_joint_traj_msg(JOINT_NAMES['right'], 3, q=SAMPLE_STATES['right']))
-        self._arm_control_pub['left'].publish(
+        self._arm_traj_control_pub['left'].publish(
             PR2Controller._create_joint_traj_msg(JOINT_NAMES['left'], 3, q=SAMPLE_STATES['left']))
 
     # Gripper functions
@@ -169,33 +158,34 @@ class PR2Controller:
 
     # Test functions
 
-    def joy_to_direct_joint(self):
+    def joy_to_direct_qdot(self):
         r"""
         This test control loop function is used to control PR2 arms directly using PS4 Joystick
         """
-        
+
         V = TWIST_GAIN[0]
         rospy.wait_for_message('/joy', Joy)
 
         while not rospy.is_shutdown():
-            
+
             qdot = np.zeros(14)
 
-            dir = self._joy_msg[0][1] / np.abs(self._joy_msg[0][1]) if np.abs(self._joy_msg[0][1]) > 0.4 else 0
+            dir = self._joy_msg[0][1] / np.abs(self._joy_msg[0]
+                                               [1]) if np.abs(self._joy_msg[0][1]) > 0.4 else 0
             if self._joy_msg[1][4]:
-                
+
                 for i in range(7):
                     qdot[i+7] = V * dir * self._joy_msg[1][i]
-
 
             if self._joy_msg[1][5]:
 
                 for i in range(7):
                     qdot[i] = V * dir * self._joy_msg[1][i]
 
-
-            self._arms_vel_controller_pub['right'].publish(PR2Controller._joint_group_command_to_msg(qdot[:7])) 
-            self._arms_vel_controller_pub['left'].publish(PR2Controller._joint_group_command_to_msg(qdot[7:])) 
+            self._arms_vel_controller_pub['right'].publish(
+                PR2Controller._joint_group_command_to_msg(qdot[:7]))
+            self._arms_vel_controller_pub['left'].publish(
+                PR2Controller._joint_group_command_to_msg(qdot[7:]))
 
             self.rate.sleep()
 
@@ -210,8 +200,15 @@ class PR2Controller:
         done = False
         while not done:
 
-            if self._joy_msg[1][-3]:
+            start_time = time.time()
 
+            # ---------------------- #
+            # ---------------------- #
+
+            qdot_r = np.zeros(7)
+            qdot_l = np.zeros(7)
+
+            if self._joy_msg[1][-3]:
                 self.move_to_neutral()
 
             if (self._joy_msg[1][-1] * self._joy_msg[1][-2]) and not self._constraint_is_set:
@@ -224,7 +221,6 @@ class PR2Controller:
             if not self._constraint_is_set:
 
                 gripper_sides = {5: 'right', 4: 'left'}
-
                 for button_index, side in gripper_sides.items():
                     if self._joy_msg[1][button_index]:
                         if self._joy_msg[0][-1] == 1:
@@ -234,37 +230,55 @@ class PR2Controller:
 
             if self._constraint_is_set:
 
-                qdot_r = np.zeros(7)
-                qdot_l = np.zeros(7)
+                # Calculate the twist from the joystick message
                 twist, done = joy_to_twist(self._joy_msg, TWIST_GAIN)
+                rospy.loginfo(f'Twist: {twist}')
 
-                if self._joy_msg[1][5]:
+                if self._joy_msg[1][5]: # Safety trigger to allow control signal to be sent
 
-                    start_time = time.time()
+                    # Extract the Jacobians in the middle frame using the virtual robot with joint states data from the real robot
                     jacob_right = self._virtual_robot.get_jacobian('right')
                     jacob_left = self._virtual_robot.get_jacobian('left')
 
+                    # Perform RMRC with DLS applied independently on each arm and the projection onto the nullspace of the constraint Jacobian
                     qdot_l, qdot_r = CalcFuncs.duo_arm_qdot_constraint(jacob_left,
                                                                        jacob_right,
                                                                        twist,
                                                                        activate_nullspace=True)
-
-                    exec_time = time.time() - start_time
-                    rospy.loginfo(
-                        f'Calculation time: {exec_time:.4f} Twist received: {twist}')
-
-                self._qdot_msg['right'] = qdot_r
-                self._qdot_msg['left'] = qdot_l
-
+                
+                # Control signal send from this block
                 self._arms_vel_controller_pub['right'].publish(
                     PR2Controller._joint_group_command_to_msg(qdot_r))
 
                 self._arms_vel_controller_pub['left'].publish(
                     PR2Controller._joint_group_command_to_msg(qdot_l))
 
+            # ---------------------- #
+            # Record the joints data
+
+            self._qdot_record['right']['desired'].append(qdot_r)
+            self._qdot_record['right']['actual'].append(
+                reorder_values(self._joint_states.velocity[17:24]))
+
+            self._qdot_record['left']['desired'].append(qdot_l)
+            self._qdot_record['left']['actual'].append(
+                reorder_values(self._joint_states.velocity[31:38]))
+
+            self._offset_distance.append(np.linalg.norm(self._virtual_robot.get_tool_pose(
+                'left', offset=False)[:3, -1] - self._virtual_robot.get_tool_pose('right', offset=False)[:3, -1]))
+           
+            # ---------------------- #
+
             if done:
                 rospy.loginfo('Done teleoperation.')
                 rospy.signal_shutdown('Done')
+
+            # ---------------------- #
+            # ---------------------- #
+
+            exec_time = time.time() - start_time
+            rospy.loginfo(
+                f'Calculation time: {exec_time:.4f}')
 
             self._rate.sleep()
 
@@ -275,10 +289,9 @@ class PR2Controller:
 
         updated_joined_left = self._virtual_robot.get_tool_pose('left')
         arrived = False
-        qdot = np.zeros(14)
         target = np.eye(4)
 
-        while not rospy.is_shutdown():
+        while not arrived:
 
             if self._joy_msg[1][-3]:
 
@@ -313,13 +326,18 @@ class PR2Controller:
                 # Visualization of the frames
                 updated_joined_left = self._virtual_robot.get_tool_pose('left')
 
-                qdot = np.concatenate([qdot_r, qdot_l])
-                msg = PR2Controller._joint_group_command_to_msg(qdot)
-                self._joint_group_vel_pub.publish(msg)
+                self._qdot_cmd['right'] = qdot_r
+                self._qdot_cmd['left'] = qdot_l
+
+                # qdot = np.concatenate([qdot_r, qdot_l])
+                self._arms_vel_controller_pub['right'].publish(
+                    PR2Controller._joint_group_command_to_msg(qdot_r))
+                self._arms_vel_controller_pub['left'].publish(
+                    PR2Controller._joint_group_command_to_msg(qdot_l))
 
             if arrived:
-                print('Arrived')
-                break
+                rospy.loginfo('Arrived at the target')
+                rospy.signal_shutdown('Done')
 
             self._rate.sleep()
 
@@ -335,14 +353,13 @@ class PR2Controller:
         self._joint_states = msg
         self._virtual_robot.set_states(self._joint_states.position)
 
-        self._qdot_record['right']['desired'].append(self._qdot_msg['right'])
-        self._qdot_record['left']['desired'].append(self._qdot_msg['left'])
+        # self._qdot_record['right']['desired'].append(self._qdot_cmd['right'])
+        # self._qdot_record['right']['actual'].append(
+        #     reorder_values(msg.velocity[17:24]))
 
-        self._qdot_record['right']['actual'].append(reorder_values(self._joint_states.effort[17:24]))
-        self._qdot_record['left']['actual'].append(reorder_values(self._joint_states.effort[31:38]))
-        
-        self._offset_distance.append(np.linalg.norm(self._virtual_robot.get_tool_pose(
-            'left', offset=False)[:3, -1] - self._virtual_robot.get_tool_pose('right', offset=False)[:3, -1]))
+        # self._qdot_record['left']['desired'].append(self._qdot_cmd['left'])
+        # self._qdot_record['left']['actual'].append(
+        #     reorder_values(msg.velocity[31:38]))
 
     def _joystick_callback(self, msg: Joy):
         r"""
@@ -353,38 +370,10 @@ class PR2Controller:
 
         self._joy_msg = (msg.axes, msg.buttons)
 
-    def _twist_callback(self, msg: TwistStamped, side: str):
-        r"""
-        Callback function for the twist subscriber
-        :param msg: TwistStamped message
-        :param side: side of the arm
-        :return: None
-        """
-
-        self._twist_msg[side] = msg
-
-    def _r_vel_cmd_callback(self, msg: Float64MultiArray):
-        r"""
-        Callback function for the right velocity command subscriber to record the joint velocities"""
-
-        self._qdot_record['right']['desired'].append(msg.data)
-        self._qdot_record['right']['actual'].append(
-            reorder_values(self._joint_states.velocity[17:24]))
- 
-    def _l_vel_cmd_callback(self, msg: Float64MultiArray):
-        r"""
-        Callback function for the left velocity command subscriber to record the joint velocities"""
-
-        self._qdot_record['left']['desired'].append(msg.data)
-        self._qdot_record['left']['actual'].append(
-            reorder_values(self._joint_states.velocity[31:38]))
-
-        self._offset_distance.append(np.linalg.norm(self._virtual_robot.get_tool_pose(
-            'left')[:3, -1] - self._virtual_robot.get_tool_pose('right')[:3, -1]))
 
     # Utility functions
     @staticmethod
-    def _call(service_name: str, service_type: str, **kwargs):
+    def _call_service(service_name: str, service_type: str, **kwargs):
         r"""
         Call the service
         :param service_name: name of the service
@@ -408,15 +397,15 @@ class PR2Controller:
         :return: bool value of the service call
         """
 
-        switched = PR2Controller._call('pr2_controller_manager/switch_controller',
-                                       SwitchController,
-                                       start_controllers=[
-                                           'r_arm_joint_group_velocity_controller',
-                                           'l_arm_joint_group_velocity_controller'],
-                                       stop_controllers=[
-                                           'r_arm_controller',
-                                           'l_arm_controller'],
-                                       strictness=1)
+        switched = PR2Controller._call_service('pr2_controller_manager/switch_controller',
+                                               SwitchController,
+                                               start_controllers=[
+                                                   'r_arm_joint_group_velocity_controller',
+                                                   'l_arm_joint_group_velocity_controller'],
+                                               stop_controllers=[
+                                                   'r_arm_controller',
+                                                   'l_arm_controller'],
+                                               strictness=1)
 
         return switched
 
@@ -429,23 +418,20 @@ class PR2Controller:
         rospy.loginfo(
             'Switching controllers and unloading velocity controllers')
 
-        switched = PR2Controller._call('pr2_controller_manager/switch_controller',
-                                       SwitchController,
-                                       start_controllers=[
-                                           'r_arm_controller',
-                                           'l_arm_controller'],
-                                       stop_controllers=[
-                                           'r_arm_joint_group_velocity_controller',
-                                           'l_arm_joint_group_velocity_controller'],
-                                       strictness=1)
+        switched = PR2Controller._call_service('pr2_controller_manager/switch_controller',
+                                               SwitchController,
+                                               start_controllers=[
+                                                   'r_arm_controller',
+                                                   'l_arm_controller'],
+                                               stop_controllers=[
+                                                   'r_arm_joint_group_velocity_controller',
+                                                   'l_arm_joint_group_velocity_controller'],
+                                               strictness=1)
 
-        PR2Controller._call('pr2_controller_manager/unload_controller',
-                            UnloadController,
-                            name='l_arm_joint_group_velocity_controller')
-
-        PR2Controller._call('pr2_controller_manager/unload_controller',
-                            UnloadController,
-                            name='r_arm_joint_group_velocity_controller')
+        PR2Controller._call_service('pr2_controller_manager/unload_controller',
+                                    UnloadController, name='l_arm_joint_group_velocity_controller')
+        PR2Controller._call_service('pr2_controller_manager/unload_controller',
+                                    UnloadController, name='r_arm_joint_group_velocity_controller')
 
         rospy.loginfo('Controllers switched and unloaded')
 

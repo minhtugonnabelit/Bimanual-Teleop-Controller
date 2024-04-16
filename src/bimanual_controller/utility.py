@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 
 # Constants
 
-TWIST_GAIN = [0.3, 0.3]
+TWIST_GAIN = [0.2, 0.2]
 CONTROL_RATE = 10
 SAMPLE_STATES = {
     'left': [np.pi/4, np.pi/6, np.pi/2, -np.pi/2, np.pi/6, -np.pi/4, np.pi/2],
@@ -346,7 +346,7 @@ def reorder_values(data):
     return data_array.tolist()
 
 
-def plot_joint_velocities(actual_data: np.ndarray, desired_data: np.ndarray, distance_data: np.ndarray, dt=0.1, title='Joint Velocities'):
+def plot_joint_velocities(actual_data: np.ndarray, desired_data: np.ndarray, distance_data: np.ndarray, dt=0.001, title='Joint Velocities'):
 
     actual_data = np.array(actual_data)
     desired_data = np.array(desired_data)
@@ -367,6 +367,8 @@ def plot_joint_velocities(actual_data: np.ndarray, desired_data: np.ndarray, dis
         joint_axes = ax[i // 4, i % 4]
         for data, color, label in zip(data_types, colors, labels):
             joint_data = data[:, i]
+            if joint_data.shape[0] != len(time_space):
+                time_space = np.linspace(0, len(joint_data) * dt, len(joint_data))
             joint_axes.plot(time_space, joint_data, color,
                             linewidth=1, label=label if i == 0 else "")
 
@@ -385,6 +387,9 @@ def plot_joint_velocities(actual_data: np.ndarray, desired_data: np.ndarray, dis
 
     # Plot for distance data in the last subplot
     distance_axes = ax[1, 3]
+    if distance_data.shape[0] != len(time_space):
+        time_space = np.linspace(0, len(distance_data) * dt, len(distance_data))
+
     distance_axes.plot(time_space, distance_data, 'g', linewidth=1)
     distance_axes.set_title("Distance Data")
     distance_axes.annotate('Max', xy=(time_space[np.argmax(distance_data)], np.max(distance_data)),
@@ -394,7 +399,7 @@ def plot_joint_velocities(actual_data: np.ndarray, desired_data: np.ndarray, dis
 
     fig.legend(['Actual', 'Desired'], loc='upper right')
     fig.suptitle(title)
-    # Adjust layout to make room for the title
+
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
