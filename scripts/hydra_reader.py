@@ -29,14 +29,6 @@ class HydraTwist():
         self._tf_listener = tf.TransformListener()
         self._joysub = rospy.Subscriber(joy_topic, Joy, self._joy_callback)
         self._twist_pub = rospy.Publisher(twist_topic, TwistStamped, queue_size=1)
-        
-
-
-        # self._left_twist_pub = rospy.Publisher("/l_arm_servo_server/delta_twist_cmds", TwistStamped, queue_size=1)
-
-        # self._current_twist_pub = self._right_twist_pub
-
-        # self._twist_pub = self._right_twist_pub
 
 
     def _joy_callback(self, msg):
