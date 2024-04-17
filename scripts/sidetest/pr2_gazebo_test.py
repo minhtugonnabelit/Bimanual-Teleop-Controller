@@ -187,7 +187,7 @@ class PR2Controller:
             self._arms_vel_controller_pub['left'].publish(
                 PR2Controller._joint_group_command_to_msg(qdot[7:]))
 
-            self.rate.sleep()
+            self._rate.sleep()
 
     def bmcp_teleop(self):
         r"""
@@ -256,13 +256,8 @@ class PR2Controller:
             # ---------------------- #
             # Record the joints data
 
-            self._qdot_record['right']['desired'].append(qdot_r)
-            self._qdot_record['right']['actual'].append(
-                reorder_values(self._joint_states.velocity[17:24]))
-
-            self._qdot_record['left']['desired'].append(qdot_l)
-            self._qdot_record['left']['actual'].append(
-                reorder_values(self._joint_states.velocity[31:38]))
+            self.store_joint_velocities('right', qdot_r)
+            self.store_joint_velocities('left', qdot_l)
 
             self._offset_distance.append(np.linalg.norm(self._virtual_robot.get_tool_pose(
                 'left', offset=False)[:3, -1] - self._virtual_robot.get_tool_pose('right', offset=False)[:3, -1]))
@@ -326,14 +321,16 @@ class PR2Controller:
                 # Visualization of the frames
                 updated_joined_left = self._virtual_robot.get_tool_pose('left')
 
-                self._qdot_cmd['right'] = qdot_r
-                self._qdot_cmd['left'] = qdot_l
-
                 # qdot = np.concatenate([qdot_r, qdot_l])
                 self._arms_vel_controller_pub['right'].publish(
                     PR2Controller._joint_group_command_to_msg(qdot_r))
                 self._arms_vel_controller_pub['left'].publish(
                     PR2Controller._joint_group_command_to_msg(qdot_l))
+                
+            self.store_joint_velocities('left', qdot_l)
+            self.store_joint_velocities('right', qdot_r)
+            self._offset_distance.append(np.linalg.norm(self._virtual_robot.get_tool_pose(
+                'left', offset=False)[:3, -1] - self._virtual_robot.get_tool_pose('right', offset=False)[:3, -1]))
 
             if arrived:
                 rospy.loginfo('Arrived at the target')
@@ -352,14 +349,6 @@ class PR2Controller:
 
         self._joint_states = msg
         self._virtual_robot.set_states(self._joint_states.position)
-
-        # self._qdot_record['right']['desired'].append(self._qdot_cmd['right'])
-        # self._qdot_record['right']['actual'].append(
-        #     reorder_values(msg.velocity[17:24]))
-
-        # self._qdot_record['left']['desired'].append(self._qdot_cmd['left'])
-        # self._qdot_record['left']['actual'].append(
-        #     reorder_values(msg.velocity[31:38]))
 
     def _joystick_callback(self, msg: Joy):
         r"""
@@ -485,6 +474,26 @@ class PR2Controller:
         joint_traj.points = [traj_point]
 
         return joint_traj
+
+    def store_joint_velocities(self, side: str, qdot: list):
+        r"""
+        Store the joint velocities in the buffer
+
+        Args:
+            side (str): Side of the robot.
+            qdot (list): List of joint velocities.
+        """
+
+        self._qdot_record[side]['desired'].append(qdot)
+
+        if side == 'left':
+            self._qdot_record[side]['actual'].append(
+                reorder_values(self._joint_states.velocity[31:38]))
+        else:
+            self._qdot_record[side]['actual'].append(
+                reorder_values(self._joint_states.velocity[17:24]))
+
+
 
 
 if __name__ == "__main__":

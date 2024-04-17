@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 # Constants
 
 TWIST_GAIN = [0.2, 0.2]
-CONTROL_RATE = 10
+CONTROL_RATE = 5
 SAMPLE_STATES = {
     'left': [np.pi/4, np.pi/6, np.pi/2, -np.pi/2, np.pi/6, -np.pi/4, np.pi/2],
     'right': [-np.pi/4, np.pi/6, -np.pi/2, -np.pi/2, -np.pi/6, -np.pi/4, np.pi/2]

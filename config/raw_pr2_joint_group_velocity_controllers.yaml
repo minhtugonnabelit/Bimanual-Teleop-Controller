@@ -1,22 +1,22 @@
 shoulder_pan_gains: &shoulder_pan_velocity_gains
-    p: 4.0
-    i: 44.67
+    p: 18.0
+    i: 4.67
     d: 0.0
     i_clamp: 100.0
     i_clamp_max: 100.0
     i_clamp_min: -100.0
 
 shoulder_lift_gains: &shoulder_lift_velocity_gains
-    p: 5.0
-    i: 55.67
+    p: 10.0
+    i: 5.67
     d: 0
     i_clamp: 100.0
     i_clamp_max: 100.0
     i_clamp_min: -100.0
 
 upper_arm_roll_gains: &upper_arm_roll_velocity_gains
-    p: 12.0
-    i: 22.9
+    p: 6.0
+    i: 42.9
     d: 0
     i_clamp: 100.0
     i_clamp_max: 100.0
