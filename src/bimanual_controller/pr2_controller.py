@@ -60,27 +60,27 @@ class PR2Controller:
         # Initialize the joint states subscriber
         self._joint_states = None
         self._joint_state_sub = rospy.Subscriber(
-            '/joint_states', JointState, self._joint_state_callback)
+            '/joint_states', JointState, self.__joint_state_callback)
 
         # Initialize the joystick subscriber
         self._joy_msg = None
         self._joystick_sub = rospy.Subscriber(
-            '/joy', Joy, self._joystick_callback)
+            '/joy', Joy, self.__joystick_callback)
 
         # Initialize the transform listener
         self._tf_listener = tf.TransformListener()
         self._tf_broadcaster = tf.TransformBroadcaster()
 
         rospy.loginfo('Controller ready to go')
-        rospy.on_shutdown(self._clean)
+        rospy.on_shutdown(self.__clean)
 
-    def _clean(self):
+    def __clean(self):
         r"""
         Clean up function with dedicated shutdown procedure"""
 
         self._virtual_robot.shutdown()
         rospy.loginfo('Shutting down the virtual robot')
-        PR2Controller._kill_jg_vel_controller()
+        PR2Controller.kill_jg_vel_controller()
         fig1, ax1 = plot_joint_velocities(
             self._qdot_record['left']['actual'], self._qdot_record['left']['desired'], distance_data=self._offset_distance, dt=self._dt, title='left')
         fig2, ax2 = plot_joint_velocities(
@@ -127,9 +127,9 @@ class PR2Controller:
         :return: None
         """
         self._arm_traj_control_pub['right'].publish(
-            PR2Controller._create_joint_traj_msg(JOINT_NAMES['right'], 3, q=SAMPLE_STATES['right']))
+            PR2Controller.__create_joint_traj_msg(JOINT_NAMES['right'], 3, q=SAMPLE_STATES['right']))
         self._arm_traj_control_pub['left'].publish(
-            PR2Controller._create_joint_traj_msg(JOINT_NAMES['left'], 3, q=SAMPLE_STATES['left']))
+            PR2Controller.__create_joint_traj_msg(JOINT_NAMES['left'], 3, q=SAMPLE_STATES['left']))
 
     # Gripper functions
 
@@ -159,7 +159,7 @@ class PR2Controller:
 
     # Callback functions
 
-    def _joint_state_callback(self, msg: JointState):
+    def __joint_state_callback(self, msg: JointState):
         r"""
         Callback function for the joint state subscriber
         :param msg: JointState message
@@ -169,7 +169,7 @@ class PR2Controller:
         self._joint_states = msg
         self._virtual_robot.set_states(self._joint_states.position)
 
-    def _joystick_callback(self, msg: Joy):
+    def __joystick_callback(self, msg: Joy):
         r"""
         Callback function for the joystick subscriber
         :param msg: Joy message
@@ -178,6 +178,7 @@ class PR2Controller:
 
         self._joy_msg = (msg.axes, msg.buttons)
 
+    # Getters
     def get_joy_msg(self):
         r"""
         Get the joystick message
@@ -185,7 +186,7 @@ class PR2Controller:
         """
 
         return self._joy_msg
-    
+
     def get_joint_states(self):
         r"""
         Get the joint states
@@ -193,7 +194,7 @@ class PR2Controller:
         """
 
         return self._joint_states
-    
+
     def get_jacobian(self, side: str):
         r"""
         Get the Jacobian of the side
@@ -212,11 +213,10 @@ class PR2Controller:
         """
 
         self._arms_vel_controller_pub[side].publish(
-            PR2Controller._joint_group_command_to_msg(qdot))
+            PR2Controller.__joint_group_command_to_msg(qdot))
 
-    # Utility functions
     @staticmethod
-    def _call_service(service_name: str, service_type: str, **kwargs):
+    def __call_service(service_name: str, service_type: str, **kwargs):
         r"""
         Call the service
         :param service_name: name of the service
@@ -234,13 +234,13 @@ class PR2Controller:
             rospy.logerr(f"Service call failed: {e}")
 
     @staticmethod
-    def _start_jg_vel_controller():
+    def start_jg_vel_controller():
         r"""
         Switch the controllers
         :return: bool value of the service call
         """
 
-        switched = PR2Controller._call_service('pr2_controller_manager/switch_controller',
+        switched = PR2Controller.__call_service('pr2_controller_manager/switch_controller',
                                                SwitchController,
                                                start_controllers=[
                                                    'r_arm_joint_group_velocity_controller',
@@ -253,7 +253,7 @@ class PR2Controller:
         return switched
 
     @staticmethod
-    def _kill_jg_vel_controller():
+    def kill_jg_vel_controller():
         r"""
         Switch the controllers
         :return: bool value of the service call
@@ -261,7 +261,7 @@ class PR2Controller:
         rospy.loginfo(
             'Switching controllers and unloading velocity controllers')
 
-        switched = PR2Controller._call_service('pr2_controller_manager/switch_controller',
+        switched = PR2Controller.__call_service('pr2_controller_manager/switch_controller',
                                                SwitchController,
                                                start_controllers=[
                                                    'r_arm_controller',
@@ -271,9 +271,9 @@ class PR2Controller:
                                                    'l_arm_joint_group_velocity_controller'],
                                                strictness=1)
 
-        PR2Controller._call_service('pr2_controller_manager/unload_controller',
+        PR2Controller.__call_service('pr2_controller_manager/unload_controller',
                                     UnloadController, name='l_arm_joint_group_velocity_controller')
-        PR2Controller._call_service('pr2_controller_manager/unload_controller',
+        PR2Controller.__call_service('pr2_controller_manager/unload_controller',
                                     UnloadController, name='r_arm_joint_group_velocity_controller')
 
         rospy.loginfo('Controllers switched and unloaded')
@@ -281,7 +281,7 @@ class PR2Controller:
         return switched
 
     @staticmethod
-    def _joint_group_command_to_msg(values: list):
+    def __joint_group_command_to_msg(values: list):
         r"""
         Convert the joint group command to Float64MultiArray message
 
@@ -297,7 +297,7 @@ class PR2Controller:
         return msg
 
     @staticmethod
-    def _create_joint_traj_msg(joint_names: list, dt: float, joint_states: list = None, qdot: list = None, q: list = None):
+    def __create_joint_traj_msg(joint_names: list, dt: float, joint_states: list = None, qdot: list = None, q: list = None):
         r"""
         Create a joint trajectory message. 
         If q desired is not provided, the joint velocities are used to calculate the joint positions
@@ -346,7 +346,7 @@ class PR2Controller:
         else:
             self._qdot_record[side]['actual'].append(
                 reorder_values(self._joint_states.velocity[17:24]))
-            
+
     def store_drift(self):
         r"""
         Store the drift in the buffer

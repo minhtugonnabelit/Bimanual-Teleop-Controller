@@ -3,6 +3,11 @@ import tf
 import time
 from geometry_msgs.msg import TwistStamped
 from sensor_msgs.msg import Joy
+from std_msgs.msg import Float64MultiArray
+
+from bimanual_controller.pr2_controller import PR2Controller
+from bimanual_controller.utility import *
+
 
 class HydraTwist():
 
@@ -10,7 +15,7 @@ class HydraTwist():
     _MAX_ANG_GAIN = 10
     _SWITCH_DEBOUCE_INTERVAL = 1
 
-    def __init__(self, joy_topic, twist_topic, controller_frame_id, base_frame_id, timeout):
+    def __init__(self, joy_topic, twist_topic, joint_group_controller_topic ,controller_frame_id, base_frame_id, timeout):
 
         # Data members to load from the parameter server
         self._controller_frame_id = controller_frame_id
@@ -29,6 +34,7 @@ class HydraTwist():
         self._tf_listener = tf.TransformListener()
         self._joysub = rospy.Subscriber(joy_topic, Joy, self._joy_callback)
         self._twist_pub = rospy.Publisher(twist_topic, TwistStamped, queue_size=1)
+        self._arm_joint_vel_controller = rospy.Publisher(joint_group_controller_topic, Float64MultiArray, queue_size=1)
 
 
     def _joy_callback(self, msg):
@@ -134,9 +140,10 @@ if __name__ == "__main__":
     twist_topic = rospy.get_param('twist_topic')
     base_frame_id = rospy.get_param('base_frame_id')
     controller_frame_id = rospy.get_param('controller_frame_id')
+    joint_group_controller_topic = rospy.get_param('joint_group_controller_topic')
 
     # Create and run the hydra reader
-    hydra_reader = HydraTwist(joy_topic, twist_topic, controller_frame_id, base_frame_id, timeout)
+    hydra_reader = HydraTwist(joy_topic, twist_topic, joint_group_controller_topic, controller_frame_id, base_frame_id, timeout)
     hydra_reader.run()
 
         

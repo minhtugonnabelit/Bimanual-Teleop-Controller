@@ -18,68 +18,64 @@ def main():
     rospy.loginfo('Start teleop using joystick')
     rospy.wait_for_message('/joy', Joy)
 
-    done = False
+    # State variables
     constraint_is_set = False
+    done = False
+
     while not done:
 
-        #start_time = time.time()
-        statt_time = rospy.Time.now()
+        start_time = time.perf_counter()
+        # start_time = rospy.Time.now()
 
         # ---------------------- #
         # ---------------------- #
 
-        qdot_r = np.zeros(7)
-        qdot_l = np.zeros(7)
+        qdot = np.zeros(14)
 
         joy_msg = controller.get_joy_msg()
 
+        # Trigger the controller to move to neutral position
         if joy_msg[1][-3]:
             controller.move_to_neutral()
 
+        # Set the kinematic constraints for BMCP and start joint group velocity controller
         if (joy_msg[1][-1] * joy_msg[1][-2]) and not constraint_is_set:
 
-            PR2Controller._start_jg_vel_controller()
+            controller.start_jg_vel_controller()
             rospy.sleep(1)
             constraint_is_set, _ = controller.set_kinematics_constraints()
             rospy.loginfo('Constraint is set, switching controllers')
 
-        if not constraint_is_set:
-
-            gripper_sides = {5: 'right', 4: 'left'}
-            for button_index, side in gripper_sides.items():
-                if joy_msg[1][button_index]:
-                    if joy_msg[0][-1] == 1:
-                        controller.open_gripper(side)
-                    elif joy_msg[0][-1] == -1:
-                        controller.close_gripper(side)
-
+        # Once constraint is set, start the teleoperation using 
         if constraint_is_set:
 
-            # Calculate the twist from the joystick message
+            # Exrtact the twist from the joystick message
             twist, done = joy_to_twist(joy_msg, TWIST_GAIN)
             rospy.logdebug(f'Twist: {twist}')
 
             if joy_msg[1][5]:  # Safety trigger to allow control signal to be sent
 
                 # Extract the Jacobians in the middle frame using the virtual robot with joint states data from the real robot
-                jacob_right = controller.get_jacobian('right')
-                jacob_left = controller.get_jacobian('left')
+                jacob_right = controller.get_jacobian(side = 'right')
+                jacob_left = controller.get_jacobian(side = 'left')
+                jacob_constraint = np.c_[jacob_left, -jacob_right]
 
-                # Perform RMRC with DLS applied independently on each arm and the projection onto the nullspace of the constraint Jacobian
-                qdot_l, qdot_r = CalcFuncs.duo_arm_qdot_constraint(jacob_left,
-                                                                   jacob_right,
-                                                                   twist,
-                                                                   activate_nullspace=True)
+                qdot_right = CalcFuncs.rmrc(jacob_right, twist, w_thresh=0.1)
+                qdot_left = CalcFuncs.rmrc(jacob_left, twist,  w_thresh=0.1)        
+                qdot_combined = np.r_[qdot_left, qdot_right]
+
+                # Perform nullspace projection for qdot_combined on constraint Jacobian to ensure the twist synchronisation
+                qdot = CalcFuncs.nullspace_projector(jacob_constraint) @ qdot_combined
 
             # Control signal send from this block
-            controller.send_joint_velocities('right', qdot_r)
-            controller.send_joint_velocities('left', qdot_l)
+            controller.send_joint_velocities('right', qdot[7:])
+            controller.send_joint_velocities('left', qdot[:7])
 
-        # ---------------------- #
+        # ---------------------- #s
         # Record the joints data
 
-        controller.store_joint_velocities('right', qdot_r)
-        controller.store_joint_velocities('left', qdot_l)
+        controller.store_joint_velocities('right', qdot[7:])
+        controller.store_joint_velocities('left', qdot[:7])
         controller.store_drift()
 
         # ---------------------- #
@@ -91,19 +87,30 @@ def main():
         # ---------------------- #
         # ---------------------- #
 
-        #exec_time = time.time() - start_time
-        exec_time = rospy.Time.now() - statt_time
+        exec_time = time.perf_counter() - start_time
         rospy.logdebug(
-            f'Calculation time: {exec_time.to_sec():.4f}')
+            f'Calculation time: {exec_time:.4f}')
+        
+        if exec_time < 1 / CONTROL_RATE:
+            rospy.sleep(1/CONTROL_RATE - exec_time)
 
-        # Sleep to control the rate of the loop execution based on the control rate
-        if exec_time.to_sec() < 1 / CONTROL_RATE:
-            rospy.sleep(1/CONTROL_RATE - exec_time.to_sec())
-
-        #total_time = time.time() - start_time
-        total_time = rospy.Time.now() - statt_time
+        total_time = time.perf_counter() - start_time
         rospy.logdebug(
-            f'Total time: {total_time.to_sec():.4f}')
+            f'Total time: {total_time:.4f}')
+        
+
+        # exec_time = rospy.Time.now() - start_time
+        # rospy.logdebug(
+        #     f'Calculation time: {exec_time.to_sec():.4f}')
+
+        # # Sleep to control the rate of the loop execution based on the control rate
+        # if exec_time.to_sec() < 1 / CONTROL_RATE:
+        #     rospy.sleep(1/CONTROL_RATE - exec_time.to_sec())
+
+        # #total_time = time.time() - start_time
+        # total_time = rospy.Time.now() - start_time
+        # rospy.logdebug(
+        #     f'Total time: {total_time.to_sec():.4f}')
 
 
 if __name__ == "__main__":
@@ -112,4 +119,3 @@ if __name__ == "__main__":
     except rospy.ROSInterruptException:
         pass
     
-        

@@ -11,9 +11,6 @@ import pygame
 import sys
 import matplotlib.pyplot as plt
 
-
-# Constants
-
 TWIST_GAIN = [0.2, 0.2]
 CONTROL_RATE = 5
 SAMPLE_STATES = {
@@ -77,7 +74,7 @@ class CalcFuncs():
 
         return np.sqrt(np.linalg.det(jacob @ np.transpose(jacob)))
 
-    def rmrc(jacob, twist):
+    def rmrc(jacob, twist, w_thresh=0.08):
         r"""
         Calculate the joint velocities using the Resolved Motion Rate Control (RMRC) method.
 
@@ -94,7 +91,6 @@ class CalcFuncs():
         w = CalcFuncs.manipulability(jacob)
 
         # set threshold and damping
-        w_thresh = 0.08
         max_damp = 0.5
 
         # if manipulability is less than threshold, add damping
@@ -109,18 +105,18 @@ class CalcFuncs():
 
         return qdot
 
-    def nullspace_projection(jacob):
+    def nullspace_projector(m):
         r"""
         Calculate the projection matrix on to the null space of the Jacobian matrix.
 
         Parameters:
-        - jacob: The Jacobian matrix of the robot.
+        - m: The matrix to construct the projector on to its nullspace.
 
         Returns:
-        - The projection matrix on to the null space of the Jacobian matrix.
+        - The projector matrix for a joint vector onto N(m).
         """
 
-        return np.eye(jacob.shape[1]) - np.linalg.pinv(jacob) @ jacob
+        return np.eye(m.shape[1]) - np.linalg.pinv(m) @ m
 
     def duo_arm_qdot_constraint(jacob_l, jacob_r, twist, activate_nullspace=True):
         r"""
@@ -128,15 +124,19 @@ class CalcFuncs():
         The Jacobian of the left and right arms are used to calculate the joint velocities that need to be presented on the same frame
         """
 
-        qdot_left = CalcFuncs.rmrc(jacob_l, twist, )
-        qdot_right = CalcFuncs.rmrc(jacob_r, twist, )
+        qdot_left = CalcFuncs.rmrc(jacob_l, twist)
+        qdot_right = CalcFuncs.rmrc(jacob_r, twist)
+
         # Combine the joint velocities of the left and right arms
         qdotc = np.r_[qdot_left, qdot_right]
+
         # Combine the Jacobians of the left and right arms
         jacob_c = np.c_[jacob_l, -jacob_r]
 
         if activate_nullspace:
-            qdotc = CalcFuncs.nullspace_projection(jacob_c) @ qdotc
+            nullspace_projection_matrix = np.eye(
+                jacob_c.shape[1]) - np.linalg.pinv(jacob_c) @ jacob_c
+            qdotc = nullspace_projection_matrix @ qdotc
 
         qdot_l = qdotc[0:jacob_l.shape[1]]
         qdot_r = qdotc[jacob_l.shape[1]:]
@@ -368,7 +368,8 @@ def plot_joint_velocities(actual_data: np.ndarray, desired_data: np.ndarray, dis
         for data, color, label in zip(data_types, colors, labels):
             joint_data = data[:, i]
             if joint_data.shape[0] != len(time_space):
-                time_space = np.linspace(0, len(joint_data) * dt, len(joint_data))
+                time_space = np.linspace(
+                    0, len(joint_data) * dt, len(joint_data))
             joint_axes.plot(time_space, joint_data, color,
                             linewidth=1, label=label if i == 0 else "")
 
@@ -388,7 +389,8 @@ def plot_joint_velocities(actual_data: np.ndarray, desired_data: np.ndarray, dis
     # Plot for distance data in the last subplot
     distance_axes = ax[1, 3]
     if distance_data.shape[0] != len(time_space):
-        time_space = np.linspace(0, len(distance_data) * dt, len(distance_data))
+        time_space = np.linspace(0, len(distance_data)
+                                 * dt, len(distance_data))
 
     distance_axes.plot(time_space, distance_data, 'g', linewidth=1)
     distance_axes.set_title("Distance Data")
