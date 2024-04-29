@@ -9,6 +9,7 @@ from bimanual_controller.pr2_controller import PR2Controller
 from bimanual_controller.utility import *
 
 
+
 class HydraTwist():
 
     _MAX_LIN_GAIN = 5
@@ -18,7 +19,7 @@ class HydraTwist():
     def __init__(self, joy_topic, twist_topic, joint_group_controller_topic ,controller_frame_id, base_frame_id, timeout):
 
         # Data members to load from the parameter server
-        self._controller_frame_id = controller_frame_id
+        self._controller_frame_i
         self._base_frame_id = base_frame_id
 
         # Data members to be initialized
@@ -72,7 +73,6 @@ class HydraTwist():
         # pass
 
         if self._switched:
-            self._current_twist_pub = self._right_twist_pub
             self._switched = False
         else:
             self._current_twist_pub = self._left_twist_pub
@@ -125,7 +125,6 @@ class HydraTwist():
                     continue
                 
             twist_msg = self._twist_to_twist_stamped_msg(self._controller_frame_id, self._base_frame_id, self._linear_gain, self._angular_gain)
-            self._twist_pub.publish(twist_msg)
 
             rate.sleep()
             
