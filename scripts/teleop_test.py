@@ -10,7 +10,6 @@ from bimanual_controller.utility import (
     CalcFuncs, CONTROL_RATE, TWIST_GAIN, joy_to_twist)
 from bimanual_controller.pr2_controller import PR2Controller
 
-
 def main():
 
     controller = PR2Controller(name='teleop_test', log_level=1, rate=CONTROL_RATE)
@@ -63,6 +62,8 @@ def main():
                 qdot_right = CalcFuncs.rmrc(jacob_right, twist, w_thresh=0.1)
                 qdot_left = CalcFuncs.rmrc(jacob_left, twist,  w_thresh=0.1)        
                 qdot_combined = np.r_[qdot_left, qdot_right]
+
+
 
                 # Perform nullspace projection for qdot_combined on constraint Jacobian to ensure the twist synchronisation
                 qdot = CalcFuncs.nullspace_projector(jacob_constraint) @ qdot_combined

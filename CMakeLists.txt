@@ -160,7 +160,7 @@ include_directories(
 ## Mark executable scripts (Python etc.) for installation
 ## in contrast to setup.py, you can choose the destination
 catkin_install_python(PROGRAMS
-  scripts/hydra_reader.py
+  # scripts/hydra_reader.py
   # scripts/pr2_gazebo_test.py
   # src/bimanual_controller/utility.py
   src/bimanual_controller/fakePR2.py

@@ -19,7 +19,7 @@ class HydraTwist():
     def __init__(self, joy_topic, twist_topic, joint_group_controller_topic ,controller_frame_id, base_frame_id, timeout):
 
         # Data members to load from the parameter server
-        self._controller_frame_i
+        self._controller_frame_id = controller_frame_id
         self._base_frame_id = base_frame_id
 
         # Data members to be initialized
@@ -34,11 +34,10 @@ class HydraTwist():
         # Initialize ROS components
         self._tf_listener = tf.TransformListener()
         self._joysub = rospy.Subscriber(joy_topic, Joy, self._joy_callback)
-        self._twist_pub = rospy.Publisher(twist_topic, TwistStamped, queue_size=1)
         self._arm_joint_vel_controller = rospy.Publisher(joint_group_controller_topic, Float64MultiArray, queue_size=1)
 
 
-    def _joy_callback(self, msg):
+    def _joy_callback(self, msg:Joy):
         r"""
         Callback function for the joy topic.\n
         The callback function is called everytime a message is published to the joy topic.\n
@@ -136,13 +135,12 @@ if __name__ == "__main__":
     # Retrieve parameters
     timeout = rospy.get_param('timeout')
     joy_topic = rospy.get_param('joy_topic')
-    twist_topic = rospy.get_param('twist_topic')
     base_frame_id = rospy.get_param('base_frame_id')
     controller_frame_id = rospy.get_param('controller_frame_id')
     joint_group_controller_topic = rospy.get_param('joint_group_controller_topic')
 
     # Create and run the hydra reader
-    hydra_reader = HydraTwist(joy_topic, twist_topic, joint_group_controller_topic, controller_frame_id, base_frame_id, timeout)
+    hydra_reader = HydraTwist(joy_topic, joint_group_controller_topic, controller_frame_id, base_frame_id, timeout)
     hydra_reader.run()
 
         
