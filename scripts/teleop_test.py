@@ -42,7 +42,8 @@ def main():
 
             controller.start_jg_vel_controller()
             rospy.sleep(1)
-            constraint_is_set, _ = controller.set_kinematics_constraints()
+            constraint_is_set, _, constraint_distance = controller.set_kinematics_constraints()
+            controller.store_constraint_distance(constraint_distance)
             rospy.loginfo('Constraint is set, switching controllers')
 
         # Once constraint is set, start the teleoperation using 
@@ -63,10 +64,12 @@ def main():
                 qdot_left = CalcFuncs.rmrc(jacob_left, twist,  w_thresh=0.1)        
                 qdot_combined = np.r_[qdot_left, qdot_right]
 
-
-
                 # Perform nullspace projection for qdot_combined on constraint Jacobian to ensure the twist synchronisation
                 qdot = CalcFuncs.nullspace_projector(jacob_constraint) @ qdot_combined
+
+                # Drift compensation for the joint group velocity controller    
+                drift = controller.get_drift_compensation()
+                qdot += drift
 
             # Control signal send from this block
             controller.send_joint_velocities('right', qdot[7:])

@@ -36,6 +36,7 @@ class PR2Controller:
             'left': {'desired': [],  'actual': []},
             'right': {'desired': [],  'actual': []}
         }
+        self.constraint_distance = 0
         self._offset_distance = []
         self._constraint_is_set = False
 
@@ -82,9 +83,9 @@ class PR2Controller:
         rospy.loginfo('Shutting down the virtual robot')
         PR2Controller.kill_jg_vel_controller()
         fig1, ax1 = plot_joint_velocities(
-            self._qdot_record['left']['actual'], self._qdot_record['left']['desired'], distance_data=self._offset_distance, dt=self._dt, title='left')
+            self._qdot_record['left']['actual'], self._qdot_record['left']['desired'], distance_data=self._offset_distance, constraint_distance = self.constraint_distance, dt=self._dt, title='left')
         fig2, ax2 = plot_joint_velocities(
-            self._qdot_record['right']['actual'], self._qdot_record['right']['desired'], distance_data=self._offset_distance, dt=self._dt, title='right')
+            self._qdot_record['right']['actual'], self._qdot_record['right']['desired'], distance_data=self._offset_distance, constraint_distance = self.constraint_distance, dt=self._dt, title='right')
         plt.show()
 
     def set_kinematics_constraints(self):
@@ -117,9 +118,10 @@ class PR2Controller:
 
         virtual_pose = np.eye(4)
         virtual_pose[:3, -1] = (left_pose[:3, -1] + right_pose[:3, -1]) / 2
+        constraint_distance = np.linalg.norm(left_pose[:3, -1] - right_pose[:3, -1])
 
         self._virtual_robot.set_constraints(virtual_pose)
-        return True, virtual_pose
+        return True, virtual_pose, constraint_distance
 
     def move_to_neutral(self):
         r"""
@@ -203,6 +205,22 @@ class PR2Controller:
         """
 
         return self._virtual_robot.get_jacobian(side)
+    
+    def get_drift_compensation(self) -> np.ndarray:
+        r"""
+        Get the drift compensation for the robot
+        :return: drift compensation velocities as joint velocities
+        """
+        v, _ = rtb.p_servo(self._virtual_robot.get_tool_pose('left', offset=True), 
+                        self._virtual_robot.get_tool_pose('right', offset=True),
+                        1, 0.01,
+                        method='angle-axis')
+        
+        # get fix velocities for the drift for both linear and angular velocities
+        qdot_fix_left = CalcFuncs.rmrc(self._virtual_robot.get_jacobian('left'), v, w_thresh=0.05)
+        qdot_fix_right = CalcFuncs.rmrc(self._virtual_robot.get_jacobian('right'), -v, w_thresh=0.05)
+
+        return np.r_[qdot_fix_left, qdot_fix_right]
 
     def send_joint_velocities(self, side: str, qdot: list):
         r"""
@@ -351,9 +369,19 @@ class PR2Controller:
         r"""
         Store the drift in the buffer
         """
-
         self._offset_distance.append(np.linalg.norm(self._virtual_robot.get_tool_pose(
             'left', offset=False)[:3, -1] - self._virtual_robot.get_tool_pose('right', offset=False)[:3, -1]))
+
+    def store_constraint_distance(self, distance: float):
+        r"""
+        Store the constraint distance in the buffer
+
+        Args:
+            distance (float): Distance between the end-effectors.
+        """
+
+        self.constraint_distance = distance
+
 
     def sleep(self):
         r"""

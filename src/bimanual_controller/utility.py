@@ -11,7 +11,7 @@ import pygame
 import sys
 import matplotlib.pyplot as plt
 
-TWIST_GAIN = [0.2, 0.2]
+TWIST_GAIN = [0.2, 0.4]
 CONTROL_RATE = 5
 SAMPLE_STATES = {
     'left': [np.pi/4, np.pi/6, np.pi/2, -np.pi/2, np.pi/6, -np.pi/4, np.pi/2],
@@ -295,7 +295,6 @@ def joy_to_twist(joy, gain):
             done = True
 
         vz = ((lpf(joy[0][5] + 1)) - (lpf(joy[0][2] + 1)))/2
-        # y = joy[1][4]*0.1 - joy[1][5]*0.1
         y = 0
 
         # Low pass filter
@@ -346,7 +345,7 @@ def reorder_values(data):
     return data_array.tolist()
 
 
-def plot_joint_velocities(actual_data: np.ndarray, desired_data: np.ndarray, distance_data: np.ndarray, dt=0.001, title='Joint Velocities'):
+def plot_joint_velocities(actual_data: np.ndarray, desired_data: np.ndarray, distance_data: np.ndarray, constraint_distance : float, dt=0.001, title='Joint Velocities'):
 
     actual_data = np.array(actual_data)
     desired_data = np.array(desired_data)
@@ -393,11 +392,15 @@ def plot_joint_velocities(actual_data: np.ndarray, desired_data: np.ndarray, dis
                                  * dt, len(distance_data))
 
     distance_axes.plot(time_space, distance_data, 'g', linewidth=1)
+    distance_axes.axhline(y=constraint_distance, color='r', linewidth=1)
     distance_axes.set_title("Distance Data")
-    distance_axes.annotate('Max', xy=(time_space[np.argmax(distance_data)], np.max(distance_data)),
+    distance_axes.set_ylim([0, 0.4])
+    distance_axes.annotate(f'Max {np.max(distance_data):.4f}', xy=(time_space[np.argmax(distance_data)], np.max(distance_data)),
                            xytext=(10, 0), textcoords='offset points', ha='center', va='bottom')
-    distance_axes.annotate('Min', xy=(time_space[np.argmin(distance_data)], np.min(distance_data)),
+    distance_axes.annotate(f'Min {np.min(distance_data):.4f}', xy=(time_space[np.argmin(distance_data)], np.min(distance_data)),
                            xytext=(10, -10), textcoords='offset points', ha='center', va='top')
+    distance_axes.annotate(f'Constraint {constraint_distance:.4f}', xy=(time_space[-1], 0.35),
+                           xytext=(10, 0), textcoords='offset points', ha='center', va='bottom', color='r')
 
     fig.legend(['Actual', 'Desired'], loc='upper right')
     fig.suptitle(title)
