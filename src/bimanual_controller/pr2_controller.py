@@ -88,6 +88,13 @@ class PR2Controller:
             self._qdot_record['right']['actual'], self._qdot_record['right']['desired'], distance_data=self._offset_distance, constraint_distance = self.constraint_distance, dt=self._dt, title='right')
         plt.show()
 
+    def sleep(self):
+        r"""
+        Sleep the controller
+        """
+
+        self._rate.sleep()
+
     def set_kinematics_constraints(self):
         r"""
         Set the kinematics constraints for the robot
@@ -132,12 +139,23 @@ class PR2Controller:
             PR2Controller.__create_joint_traj_msg(JOINT_NAMES['right'], 3, q=SAMPLE_STATES['right']))
         self._arm_traj_control_pub['left'].publish(
             PR2Controller.__create_joint_traj_msg(JOINT_NAMES['left'], 3, q=SAMPLE_STATES['left']))
+        
+    def send_joint_velocities(self, side: str, qdot: list):
+        r"""
+        Send the joint velocities to the robot
+        :param side: side of the robot
+        :param qdot: list of joint velocities
+        :return: None
+        """
+
+        self._arms_vel_controller_pub[side].publish(
+            PR2Controller.__joint_group_command_to_msg(qdot))
 
     # Gripper functions
 
     def open_gripper(self, side: str):
         r"""
-        Close the gripper
+        open the gripper
         :param side: side of the robot
         :return: None
         """
@@ -211,8 +229,8 @@ class PR2Controller:
         Get the drift compensation for the robot
         :return: drift compensation velocities as joint velocities
         """
-        v, _ = rtb.p_servo(self._virtual_robot.get_tool_pose('left', offset=True), 
-                        self._virtual_robot.get_tool_pose('right', offset=True),
+        v, _ = rtb.p_servo(self._virtual_robot.get_tool_pose(side = 'left', offset=True), 
+                        self._virtual_robot.get_tool_pose(side = 'right', offset=True),
                         1, 0.01,
                         method='angle-axis')
         
@@ -221,17 +239,18 @@ class PR2Controller:
         qdot_fix_right = CalcFuncs.rmrc(self._virtual_robot.get_jacobian('right'), -v, w_thresh=0.05)
 
         return np.r_[qdot_fix_left, qdot_fix_right]
-
-    def send_joint_velocities(self, side: str, qdot: list):
+        
+    def joint_limit_damper(self, qdot, soft_limit) -> list:
         r"""
-        Send the joint velocities to the robot
-        :param side: side of the robot
-        :param qdot: list of joint velocities
-        :return: None
+        joint limit avoidance mechanism with speed scaling factor calculated based on 
+        how close individual joint to its limit. We then get a list of 2xn scaling factor that range from 0 to 1.
+        The factor will always be 1 unless a joint get into soft limit, thus lead to the general
+        factor that applied entirely to set of joint velocity
         """
+        x = 1
+        qdot_damped = qdot * x
 
-        self._arms_vel_controller_pub[side].publish(
-            PR2Controller.__joint_group_command_to_msg(qdot))
+        return qdot_damped
 
     @staticmethod
     def __call_service(service_name: str, service_type: str, **kwargs):
@@ -382,10 +401,3 @@ class PR2Controller:
 
         self.constraint_distance = distance
 
-
-    def sleep(self):
-        r"""
-        Sleep the controller
-        """
-
-        self._rate.sleep()

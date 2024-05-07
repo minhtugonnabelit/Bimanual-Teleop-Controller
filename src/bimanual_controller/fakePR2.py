@@ -106,7 +106,7 @@ class FakePR2:
         self._env.add(self._left_ax)
         self._env.add(self._right_ax)
 
-    def get_tool_pose(self, side, offset=True):
+    def get_tool_pose(self, side:str, offset=True):
         r"""
         Get the tool pose of the robot
         :param side: side of the robot
