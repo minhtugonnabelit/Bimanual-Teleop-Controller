@@ -278,16 +278,17 @@ def joy_to_twist(joy, gain):
                 pygame.quit()
                 sys.exit()
         if joy.get_button(0):
+            print("Button 0 is pressed")
             done = True
 
         vz = (lpf(joy.get_axis(2) + 1,))/2 - (lpf(joy.get_axis(5) + 1,))/2
         y = joy.get_button(1)*0.1 - joy.get_button(3)*0.1
 
         # Low pass filter
-        vy = joy.get_axis(1) if abs(joy.get_axis(0)) > 0.1 else 0
-        vx = joy.get_axis(1) if abs(joy.get_axis(1)) > 0.1 else 0
-        r = joy.get_axis(3) if abs(joy.get_axis(3)) > 0.2 else 0
-        p = joy.get_axis(4) if abs(joy.get_axis(4)) > 0.2 else 0
+        vy = lpf(joy.get_axis(1))  # if abs(joy.get_axis(0)) > 0.1 else 0
+        vx = lpf(joy.get_axis(1))  # if abs(joy.get_axis(1)) > 0.1 else 0
+        r = lpf(joy.get_axis(3))  # if abs(joy.get_axis(3)) > 0.2 else 0
+        p = lpf(joy.get_axis(4))  # if abs(joy.get_axis(4)) > 0.2 else 0
 
     else:
 
@@ -345,11 +346,11 @@ def reorder_values(data):
     return data_array.tolist()
 
 
-def plot_joint_velocities(actual_data: np.ndarray, desired_data: np.ndarray, distance_data: np.ndarray, constraint_distance : float, dt=0.001, title='Joint Velocities'):
+def plot_joint_velocities(actual_data: np.ndarray, desired_data: np.ndarray, dt=0.001, title='Joint Velocities'):
 
     actual_data = np.array(actual_data)
     desired_data = np.array(desired_data)
-    distance_data = np.array(distance_data)
+    # distance_data = np.array(distance_data)
 
     # Adjusted figsize for better visibility
     fig, ax = plt.subplots(2, 4, figsize=(18, 10))
@@ -385,27 +386,87 @@ def plot_joint_velocities(actual_data: np.ndarray, desired_data: np.ndarray, dis
 
         joint_axes.set_title(JOINT_NAMES[title][i])
 
-    # Plot for distance data in the last subplot
-    distance_axes = ax[1, 3]
-    if distance_data.shape[0] != len(time_space):
-        time_space = np.linspace(0, len(distance_data)
-                                 * dt, len(distance_data))
+    # # Plot for distance data in the last subplot
+    # distance_axes = ax[1, 3]
+    # if distance_data.shape[0] != len(time_space):
+    #     time_space = np.linspace(0, len(distance_data)
+    #                              * dt, len(distance_data))
 
-    distance_axes.plot(time_space, distance_data, 'g', linewidth=1)
-    distance_axes.axhline(y=constraint_distance, color='r', linewidth=1)
-    distance_axes.set_title("Distance Data")
-    distance_axes.set_ylim([0, 0.4])
-    distance_axes.annotate(f'Max {np.max(distance_data):.4f}', xy=(time_space[np.argmax(distance_data)], np.max(distance_data)),
-                           xytext=(10, 0), textcoords='offset points', ha='center', va='bottom')
-    distance_axes.annotate(f'Min {np.min(distance_data):.4f}', xy=(time_space[np.argmin(distance_data)], np.min(distance_data)),
-                           xytext=(10, -10), textcoords='offset points', ha='center', va='top')
-    distance_axes.annotate(f'Constraint {constraint_distance:.4f}', xy=(time_space[-1], 0.35),
-                           xytext=(10, 0), textcoords='offset points', ha='center', va='bottom', color='r')
+    # distance_axes.plot(time_space, distance_data, 'k', linewidth=1)
+    # distance_axes.axhline(y=constraint_distance, color='r', linewidth=1)
+    # distance_axes.set_title("Distance Data")
+    # distance_axes.set_ylim([0, 0.4])
+    # distance_axes.annotate(f'Max {np.max(distance_data):.4f}', xy=(time_space[np.argmax(distance_data)], np.max(distance_data)),
+    #                        xytext=(10, 0), textcoords='offset points', ha='center', va='bottom')
+    # distance_axes.annotate(f'Min {np.min(distance_data):.4f}', xy=(time_space[np.argmin(distance_data)], np.min(distance_data)),
+    #                        xytext=(10, -10), textcoords='offset points', ha='center', va='top')
+    # distance_axes.annotate(f'Constraint {constraint_distance:.4f}', xy=(time_space[-1], 0.35),
+    #                        xytext=(10, 0), textcoords='offset points', ha='center', va='bottom', color='r')
 
     fig.legend(['Actual', 'Desired'], loc='upper right')
     fig.suptitle(title)
 
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
+
+    return fig, ax
+
+
+def plot_manip_and_drift(constraint_distance: float, manipulabity_threshold: float, drift: np.ndarray, manip_l: np.ndarray, manip_r: list, dt=0.001):
+    r"""
+    Plot the manipulability and drift data for the PR2 robot.
+
+    Parameters:
+    - constraint_distance: The constraint distance data.
+    - drift: The drift data.
+    - manip_l: The manipulability data for the left arm.
+    - manip_r: The manipulability data for the right arm.
+    - dt: The time interval.
+
+    Returns:
+    - The figure and axes objects.
+    """
+
+    fig, ax = plt.subplots(2, 2, figsize=(18, 10))
+
+    # Prepare data
+    time_space = np.linspace(0, len(drift) * dt, len(drift))
+    manip_axes = ax[0, 0]
+    drift_axes = ax[0, 1]
+
+    # Plot manipulability data    # Plot drift data
+    if len(manip_r) != len(time_space):
+        time_space = np.linspace(0, len(manip_r)
+                                 * dt, len(manip_r))
+    manip_axes.plot(time_space, manip_l, 'r', linewidth=1)
+    manip_axes.plot(time_space, manip_r, 'b', linewidth=1)
+    manip_axes.set_title('Manipulability graph')
+    manip_axes.set_xlabel('Time')
+    manip_axes.set_ylabel('Manipulability')
+    manip_axes.legend(['Left arm', 'Right arm'])
+    manip_axes.axhline(y=manipulabity_threshold, color='k',
+                       linewidth=1, linestyle='--')
+    manip_axes.annotate(f'Min Left {np.min(manip_l):.4f}', xy=(time_space[np.argmin(manip_l)], np.min(
+        manip_l)), xytext=(10, 0), textcoords='offset points', ha='center', va='bottom', color='r')
+    manip_axes.annotate(f'Min Right {np.min(manip_r):.4f}', xy=(time_space[np.argmin(manip_r)], np.min(
+        manip_r)), xytext=(10, -10), textcoords='offset points', ha='center', va='top', color='b')
+
+    # Plot drift data
+    if len(drift) != len(time_space):
+        time_space = np.linspace(0, len(drift)
+                                 * dt, len(drift))
+    drift_axes.plot(time_space, drift, 'k', linewidth=1)
+    drift_axes.set_title('Drift graph')
+    drift_axes.set_xlabel('Time')
+    drift_axes.set_ylabel('Distance')
+    drift_axes.set_ylim([0, 0.4])
+    mark = np.size(time_space)/2
+    drift_axes.axhline(y=constraint_distance, color='r', linewidth=1)
+    drift_axes.annotate(f'Constraint {constraint_distance:.4f}', xy=(time_space[250], 0.35),
+                        xytext=(10, 0), textcoords='offset points', ha='center', va='bottom', color='r')
+    drift_axes.annotate(f'Max {np.max(drift):.4f}', xy=(time_space[np.argmax(drift)], np.max(
+        drift)), xytext=(10, 0), textcoords='offset points', ha='center', va='bottom', color='k')
+    drift_axes.annotate(f'Min {np.min(drift):.4f}', xy=(time_space[np.argmin(drift)], np.min(
+        drift)), xytext=(10, -10), textcoords='offset points', ha='center', va='top', color='k')
 
     return fig, ax

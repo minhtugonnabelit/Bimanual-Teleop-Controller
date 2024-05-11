@@ -58,14 +58,11 @@ traj.append(target)
 # traj.append(target2)
 # traj.append(target3)
 
-
-
 env.add(pr2)
 env.add(left_ax)
 env.add(right_ax)
 for t in traj:
     env.add(geometry.Axes(length=0.05, pose=t))
-
 
 df = list()
 dt_f = list()
@@ -96,16 +93,16 @@ for target in traj:
                              end=pr2.grippers[1],
                              start="l_shoulder_pan_link",  
                              tool=sm.SE3(joined_in_left))  # Jacobian of the left arm within the end-effector frame
-        w_l.append(manipulability(jacob_l))
+        w_l.append(CalcFuncs.manipulability(jacob_l))
         
         jacob_r = pr2.jacobe(pr2.q, 
                              end=pr2.grippers[0], 
                              start="r_shoulder_pan_link", 
                              tool=sm.SE3(joined_in_right))  # Jacobian of the right arm within the end-effector frame
-        w_r.append(manipulability(jacob_r))
+        w_r.append(CalcFuncs.manipulability(jacob_r))
         
         # Calculate the joint velocities using the Resolved Motion Rate Control (RMRC) method with the projection onto nullspace of Constraint Jacobian
-        qdot_l, qdot_r = duo_arm_qdot_constraint(jacob_l, jacob_r, middle_twist, activate_nullspace=True)
+        qdot_l, qdot_r = CalcFuncs.duo_arm_qdot_constraint(jacob_l, jacob_r, middle_twist, activate_nullspace=True)
 
         # ---------------------------------------------------------------------------#
         # SECTION TO UPDATE VISUALIZATION AND RECORD THE NECESSARY DATA
@@ -149,7 +146,6 @@ plt.title('Manipulability differential graph')
 plt.xlabel('Time')
 plt.ylabel('Manipulability rate')
 plt.legend(['Left arm', 'Right arm'])
-
 
 plt.show()
 # env.hold()

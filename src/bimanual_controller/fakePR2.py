@@ -24,16 +24,16 @@ class FakePR2:
         self._robot = rtb.models.PR2()
         self._is_collapsed = False
         self._tool_offset = {
-            'left': np.eye(4),
-            'right': np.eye(4)
+            'l': np.eye(4),
+            'r': np.eye(4)
         }
 
         self._arms_frame = {
-            'left': {
+            'l': {
                 'end': self._robot.grippers[1],
                 'start': 'l_shoulder_pan_link'
             },
-            'right': {
+            'r': {
                 'end': self._robot.grippers[0],
                 'start': 'r_shoulder_pan_link'
             }
@@ -52,7 +52,7 @@ class FakePR2:
         :return: None
         """
         while not self._is_collapsed:
-            self._env.step(0.1)
+            self._env.step(1/CONTROL_RATE)
 
     def set_constraints(self, virtual_pose: np.ndarray):
         r"""
@@ -61,22 +61,25 @@ class FakePR2:
         :return: None
         """
 
-        self._tool_offset['left'] = linalg.inv(self._robot.fkine(
-            self._robot.q, end=self._arms_frame['left']['end'])) @ virtual_pose
-        self._tool_offset['right'] = linalg.inv(self._robot.fkine(
-            self._robot.q, end=self._arms_frame['right']['end'])) @ virtual_pose
+        self._tool_offset['l'] = linalg.inv(self._robot.fkine(
+            self._robot.q, end=self._arms_frame['l']['end'])) @ virtual_pose
+        self._tool_offset['r'] = linalg.inv(self._robot.fkine(
+            self._robot.q, end=self._arms_frame['r']['end'])) @ virtual_pose
 
         return True
 
-    def set_states(self, joint_states: list):
+    def set_states(self, joint_states: list, real_robot=True):
         r"""
         Set the joint states of the arms only
         :param joint_states: list of joint states
         :return: None
         """
-
-        right_js = reorder_values(joint_states[17:24])
-        left_js = reorder_values(joint_states[31:38])
+        if real_robot:
+            right_js = reorder_values(joint_states[17:24])
+            left_js = reorder_values(joint_states[31:38])
+        else:
+            right_js = joint_states[0:7]
+            left_js = joint_states[7:14]
 
         self._robot.q[16:23] = right_js
         self._robot.q[23:30] = left_js
@@ -85,9 +88,9 @@ class FakePR2:
         if self._launch_visualizer:
 
             self._left_ax.T = self._robot.fkine(
-                self._robot.q, end=self._arms_frame['left']['end'], tool=self._tool_offset['left']).A
+                self._robot.q, end=self._arms_frame['l']['end'], tool=self._tool_offset['l']).A
             self._right_ax.T = self._robot.fkine(
-                self._robot.q, end=self._arms_frame['right']['end'], tool=self._tool_offset['right']).A
+                self._robot.q, end=self._arms_frame['r']['end'], tool=self._tool_offset['r']).A
 
     def init_visualization(self):
         r"""
@@ -97,10 +100,10 @@ class FakePR2:
         """
 
         self._left_ax = geometry.Axes(length=0.05, pose=self._robot.fkine(
-            self._robot.q, end=self._arms_frame['left']['end'], tool=self._tool_offset['left']).A)
+            self._robot.q, end=self._arms_frame['l']['end'], tool=self._tool_offset['l']).A)
 
         self._right_ax = geometry.Axes(length=0.05, pose=self._robot.fkine(
-            self._robot.q, end=self._arms_frame['right']['end'], tool=self._tool_offset['right']).A)
+            self._robot.q, end=self._arms_frame['r']['end'], tool=self._tool_offset['r']).A)
 
         self._env.add(self._robot)
         self._env.add(self._left_ax)
@@ -123,7 +126,7 @@ class FakePR2:
         Get the joint states of the robot
         :return: joint states
         """
-        if side == 'left':
+        if side == 'l':
             return self._robot.q[23:30]
         else:
             return self._robot.q[16:23]
@@ -137,6 +140,22 @@ class FakePR2:
         """
 
         return self._robot.jacobe(self._robot.q, end=self._arms_frame[side]['end'], start=self._arms_frame[side]['start'], tool=self._tool_offset[side])
+
+    def get_drift_compensation(self) -> np.ndarray:
+        r"""
+        Get the drift compensation for the robot
+        :return: drift compensation velocities as joint velocities
+        """
+        v, _ = rtb.p_servo(self.get_tool_pose(side = 'l', offset=True), 
+                        self.get_tool_pose(side = 'r', offset=True),
+                        1, 0.01,
+                        method='angle-axis')
+        
+        # get fix velocities for the drift for both linear and angular velocities
+        qdot_fix_left = CalcFuncs.rmrc(self.get_jacobian('l'), v, w_thresh=0.05)
+        qdot_fix_right = CalcFuncs.rmrc(self.get_jacobian('r'), -v, w_thresh=0.05)
+
+        return np.r_[qdot_fix_left, qdot_fix_right]
 
     def shutdown(self):
         r"""

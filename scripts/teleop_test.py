@@ -9,8 +9,8 @@ from sensor_msgs.msg import Joy
 from bimanual_controller.utility import (
     CalcFuncs, CONTROL_RATE, TWIST_GAIN, joy_to_twist)
 from bimanual_controller.pr2_controller import PR2Controller
-from threading import Thread
 import threading
+import copy
 
 
 class BMCP:
@@ -19,15 +19,23 @@ class BMCP:
 
         self.controller = PR2Controller(
             name='teleop_test', log_level=1, rate=CONTROL_RATE)
-        rospy.loginfo('Start teleop using joystick')
-        rospy.wait_for_message('/joy', Joy)
 
+        self.controller.set_manip_thresh(0.1)
+
+        rospy.loginfo('Start teleop using joystick')
+        # rospy.wait_for_message('/joy', Joy)
+
+        self.constraint_is_set = False
+        self._state = 'individual'
         self.qdot_left = np.zeros(7)
         self.qdot_right = np.zeros(7)
+
+        self._qdot_right_lock = threading.Lock()
+        self._qdot_left_lock = threading.Lock()
+        # self.rate = rospy.Rate(CONTROL_RATE)
+
         self.control_signal_thread = threading.Thread(
             target=self.control_signal_handler)
-        # self.recorder_thread = threading.Thread(target=self.recorder)
-        # self.recorder_thread.start()
 
     def teleop_test(self):
 
@@ -53,15 +61,19 @@ class BMCP:
 
             if joy_msg[1][4]:
                 if joy_msg[1][6]:
-                    self.controller.open_gripper(side='left')
+                    self.controller.left_arm.open_gripper()
+                    # self.controller.open_gripper(side='left')
                 elif joy_msg[1][7]:
-                    self.controller.close_gripper(side='left')
+                    self.controller.left_arm.close_gripper()
+                    # self.controller.close_gripper(side='left')
 
             if joy_msg[1][5]:
                 if joy_msg[1][6]:
-                    self.controller.open_gripper(side='right')
+                    self.controller.right_arm.open_gripper()
+                    # self.controller.open_gripper(side='right')
                 elif joy_msg[1][7]:
-                    self.controller.close_gripper(side='right')
+                    self.controller.right_arm.close_gripper()
+                    # self.controller.close_gripper(side='right')
 
             # Set the kinematic constraints for BMCP and start joint group velocity controller
             if (joy_msg[1][-1] * joy_msg[1][-2]) and not constraint_is_set:
@@ -84,19 +96,24 @@ class BMCP:
                 if joy_msg[1][5]:  # Safety trigger to allow control signal to be sent
 
                     # Extract the Jacobians in the middle frame using the virtual robot with joint states data from the real robot
-                    jacob_right = self.controller.get_jacobian(side='right')
-                    jacob_left = self.controller.get_jacobian(side='left')
+                    jacob_right = self.controller.get_jacobian(side='r')
+                    jacob_left = self.controller.get_jacobian(side='l')
                     jacob_constraint = np.c_[jacob_left, -jacob_right]
 
+                    # Calculate the joint velocities using RMRC
                     qdot_right = CalcFuncs.rmrc(
-                        jacob_right, twist, w_thresh=0.1)
+                        jacob_right, twist, w_thresh=0.07)
                     qdot_left = CalcFuncs.rmrc(
-                        jacob_left, twist,  w_thresh=0.1)
+                        jacob_left, twist,  w_thresh=0.07)
                     qdot_combined = np.r_[qdot_left, qdot_right]
+
+                    qdot = qdot_combined
 
                     # Perform nullspace projection for qdot_combined on constraint Jacobian to ensure the twist synchronisation
                     qdot = CalcFuncs.nullspace_projector(
                         jacob_constraint) @ qdot_combined
+
+                    # @TODO: Joint limits avoidance to be added here through nullspace filtering
 
                     # Drift compensation for the joint group velocity controller
                     drift = self.controller.get_drift_compensation()
@@ -106,20 +123,12 @@ class BMCP:
                 self.qdot_right = qdot[7:]
                 self.qdot_left = qdot[:7]
 
-            # ---------------------- #s
-            # Record the joints data
-
-            self.controller.store_joint_velocities('right', qdot[7:])
-            self.controller.store_joint_velocities('left', qdot[:7])
-            self.controller.store_drift()
-
             # ---------------------- #
 
             if done:
                 rospy.loginfo('Done teleoperation.')
                 rospy.signal_shutdown('Done')
                 self.control_signal_thread.join()
-                # self.recorder_thread.join()
                 rospy.loginfo('Control signal thread joined.')
 
             # ---------------------- #
@@ -131,24 +140,241 @@ class BMCP:
 
             time.sleep(1/(CONTROL_RATE*10))
 
+    def teleop_with_hand_motion(self):
+        r"""
+        Similar system to the coordination part of teleop_test, except for the beginning already start with
+        joint_group_vel_controller vel cmd input from montion controller interface instead of letting trajectory-liked motion to set the initial state for setting the constraint
+        """
+        # State variables
+        last_switch_time = 0
+
+        rospy.loginfo('Start teleop using Razer Hydra Controller')
+
+        # home = False
+        # while not home:
+        #     self.controller.move_to_neutral()
+        #     home = self.controller.check_neutral()
+        #     print(home)
+
+        jgvc_started = self.controller.start_jg_vel_controller()
+        if not jgvc_started:
+            rospy.logerr('Failed to start joint group velocity controller')
+            return
+
+        def check_state(last_switch_time):
+            left_joy_msg = self.controller.get_hydra_joy_msg(side='l')
+            right_joy_msg = self.controller.get_hydra_joy_msg(side='r')
+            if left_joy_msg[1][0] and right_joy_msg[1][0]:
+                current_time = time.time()
+                if current_time - last_switch_time >= 1:
+                    last_switch_time = current_time
+                    if self._state == 'central':
+                        self.constraint_is_set = False
+                        self.switch_to_individual_control()
+                    else:
+                        self.switch_to_central_control()
+
+            elif left_joy_msg[1][1] and right_joy_msg[1][1]:  # TODO add debouncer
+                self.stop()  # Switch to 'Done' state
+            return last_switch_time
+
+        rospy.sleep(1)  # Wait for the controller to start\
+        self.control_signal_thread.start()
+
+        while not rospy.is_shutdown() and self._state != 'Done':
+
+            if self._state == 'individual':
+                # Start individual control threads
+                left_thread = threading.Thread(
+                    target=self.right_hand_controller)
+                right_thread = threading.Thread(
+                    target=self.left_hand_controller)
+                left_thread.start()
+                right_thread.start()
+
+                # Wait for state change
+                while self._state == 'individual':
+
+                    last_switch_time = check_state(last_switch_time)
+                    rospy.sleep(0.1)
+
+                # Stop individual control threads
+                left_thread.join()
+                right_thread.join()
+
+            elif self._state == 'central':
+                # Start central control thread
+                central_thread = threading.Thread(
+                    target=self.central_controller)
+                central_thread.start()
+
+                # Wait for state change
+                while self._state == 'central':
+
+                    last_switch_time = check_state(last_switch_time)
+                    rospy.sleep(0.1)
+
+                # Stop central control thread
+                central_thread.join()
+
+            elif self._state == "Done":
+                rospy.loginfo('Done teleoperation.')
+                rospy.signal_shutdown('Done')
+                self.control_signal_thread.join()
+                rospy.loginfo('Control signal thread joined.')
+
+            else:
+                raise ValueError('Invalid state')
+
+    def switch_to_individual_control(self):
+        self._state = 'individual'
+
+    def switch_to_central_control(self):
+        self._state = 'central'
+
+    def stop(self):
+        self._state = 'Done'
+
+    def right_hand_controller(self):
+
+        synced = False
+        while self._state == 'individual':
+
+            print('bruh')
+
+            qdot = np.zeros(7)
+            joy_msg = self.controller.get_hydra_joy_msg(side='r')
+            twist_msg, synced = self.controller.get_twist(
+                side='r', synced=synced)
+
+            if not synced:
+                continue
+
+            if joy_msg[1][-2]:  # Safety trigger to allow control signal to be sent
+                print('Joy msg: ', joy_msg[1][-2])
+                jacob = self.controller.get_jacobian(side='r')
+                qdot = CalcFuncs.rmrc(
+                    jacob, twist_msg, w_thresh=0.1)
+
+            with self._qdot_right_lock: 
+                self.qdot_right = copy.deepcopy(qdot)
+
+            # if joy_msg[1][3]:
+            #     self.controller.right_arm.open_gripper()
+            # elif joy_msg[1][2]:
+            #     self.controller.right_arm.close_gripper()
+
+            rospy.sleep(1/(CONTROL_RATE*10))
+
+    def left_hand_controller(self):
+
+        synced = False
+
+        while self._state == 'individual':
+
+            qdot_left = np.zeros(7)
+            joy_msg = self.controller.get_hydra_joy_msg(side='l')
+            twist_msg, synced = self.controller.get_twist(
+                side='l', synced=synced)
+            if not synced:
+                continue
+
+            if joy_msg[1][-2]:
+                jacob_left = self.controller.get_jacobian(side='l')
+                qdot_left = CalcFuncs.rmrc(
+                        jacob_left, twist_msg, w_thresh=0.1)
+                
+            with self._qdot_left_lock:        
+                self.qdot_left = copy.deepcopy(qdot_left)
+
+            # if joy_msg[1][3]:
+            #     self.controller.left_arm.open_gripper()
+            # elif joy_msg[1][2]:
+            #     self.controller.left_arm.close_gripper()
+
+            rospy.sleep(1/(CONTROL_RATE*10))
+
+    def central_controller(self):
+
+        synced = False
+
+        if not self.constraint_is_set:
+
+            self.constraint_is_set, _, constraint_distance = self.controller.set_kinematics_constraints()
+            self.controller.store_constraint_distance(constraint_distance)
+            rospy.loginfo(
+                'Constraint is set, switching controllers, started velocity controller thread')
+
+        while self._state == 'central':
+
+            qdot = np.zeros(14)
+
+            joy_msg = self.controller.get_hydra_joy_msg(side='l')
+            twist_msg, synced = self.controller.get_twist(side='l', synced=synced)
+
+            if joy_msg[1][-2]:
+
+                # Extract the Jacobians in the middle frame using the virtual robot with joint states data from the real robot
+                jacob_right = self.controller.get_jacobian(side='r')
+                jacob_left = self.controller.get_jacobian(side='l')
+                jacob_constraint = np.c_[jacob_left, -jacob_right]
+
+                # Calculate the joint velocities using RMRC
+                qdot_right = CalcFuncs.rmrc(jacob_right, twist_msg, w_thresh=0.07)
+                qdot_left = CalcFuncs.rmrc(jacob_left, twist_msg,  w_thresh=0.07)
+                qdot_combined = np.r_[qdot_left, qdot_right]
+
+                # Perform nullspace projection for qdot_combined on constraint Jacobian to ensure the twist synchronisation
+                qdot = CalcFuncs.nullspace_projector(jacob_constraint) @ qdot_combined
+
+                # @TODO: Joint limits avoidance to be added here through nullspace filtering
+
+                # Drift compensation for the joint group velocity controller
+                drift = self.controller.get_drift_compensation()
+                qdot += drift
+
+            # # Control signal send from this block
+            with self._qdot_right_lock: 
+                self.qdot_right = qdot[7:]
+            with self._qdot_left_lock: 
+                self.qdot_left = qdot[:7]
+
+            if joy_msg[1][3]:
+                self.controller.left_arm.open_gripper()
+            elif joy_msg[1][2]:
+                self.controller.left_arm.close_gripper()
+
+            rospy.sleep(1/(CONTROL_RATE*10))
+
     def control_signal_handler(self):
 
         while not rospy.is_shutdown():
 
-            self.controller.send_joint_velocities(
-                side='right', qdot=self.qdot_right)
-            self.controller.send_joint_velocities(
-                side='left', qdot=self.qdot_left)
+            # Record the joints data
+
+            # self.controller.store_joint_velocities('right', self.qdot_right)
+            # self.controller.store_joint_velocities('left', self.qdot_left)
+            # self.controller.store_manipulability()
+            # self.controller.store_drift()
+
+            if self._state != 'individual':
+                self.controller.store_manipulability()
+                self.controller.store_drift()
+
+            # send  the control signal
+
+            # self.controller.send_joint_velocities(
+            #     side='right', qdot=self.qdot_right)
+            # self.controller.send_joint_velocities(
+            #     side='left', qdot=self.qdot_left)
+
+            self.controller.right_arm.send_joint_command(
+                joint_command=self.qdot_right)
+            self.controller.left_arm.send_joint_command(
+                joint_command=self.qdot_left)
+
             self.controller.sleep()
 
-    # def recorder(self):
-
-    #     while not rospy.is_shutdown():
-
-    #         self.controller.store_joint_velocities('right', self.qdot_right)
-    #         self.controller.store_joint_velocities('left', self.qdot_left)
-    #         self.controller.store_drift()
-    #         time.sleep(1/CONTROL_RATE)
 
 # def main():
 
@@ -275,6 +501,7 @@ class BMCP:
 if __name__ == "__main__":
     try:
         b = BMCP()
-        b.teleop_test()
+        # b.teleop_test()
+        b.teleop_with_hand_motion()
     except rospy.ROSInterruptException:
         pass
