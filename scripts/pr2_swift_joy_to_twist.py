@@ -9,7 +9,7 @@ from swift import Swift
 
 # Import custom utility functions
 from bimanual_controller.utility import *
-from bimanual_controller.fakePR2 import FakePR2
+# from scripts.sidetest.fakePR2 import FakePR2
 
 pr2 = rtb.models.PR2()
 qtest = np.zeros(31)

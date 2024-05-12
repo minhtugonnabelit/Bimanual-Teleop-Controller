@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt
 from scipy import linalg, optimize
 
 from bimanual_controller.utility import *
-from bimanual_controller.fakePR2 import FakePR2
+# from bimanual_controller.fakePR2 import FakePR2
 from bimanual_controller.arm_controller import ArmController
 
 
@@ -56,11 +56,11 @@ class PR2Controller:
                                       enable_gripper=True,
                                       gripper_cmd_type=Pr2GripperCommand)
 
-        # Initialize arms trajectory controllers publishers
-        self._arm_traj_control_pub = {
-            'left': rospy.Publisher('l_arm_controller/command', JointTrajectory, queue_size=1),
-            'right': rospy.Publisher('r_arm_controller/command', JointTrajectory, queue_size=1)
-        }
+        # # Initialize arms trajectory controllers publishers
+        # self._arm_traj_control_pub = {
+        #     'left': rospy.Publisher('l_arm_controller/command', JointTrajectory, queue_size=1),
+        #     'right': rospy.Publisher('r_arm_controller/command', JointTrajectory, queue_size=1)
+        # }
 
         # Initialize the joint states subscriber
         self._joint_states = None
@@ -103,6 +103,7 @@ class PR2Controller:
 
         rospy.loginfo('Controller ready to go')
         rospy.on_shutdown(self.__clean)
+
 
     def __clean(self):
         r"""
@@ -183,25 +184,29 @@ class PR2Controller:
         Move the robot to neutral position
         :return: None
         """
-        if not action:
-            self._arm_traj_control_pub['right'].publish(
-                PR2Controller._create_joint_traj_msg(JOINT_NAMES['right'], 3, q=SAMPLE_STATES['right']))
-            self._arm_traj_control_pub['left'].publish(
-                PR2Controller._create_joint_traj_msg(JOINT_NAMES['left'], 3, q=SAMPLE_STATES['left']))
-        else:
-            client_r = actionlib.SimpleActionClient('r_arm_controller/follow_joint_trajectory', FollowJointTrajectoryAction)
-            client_r.wait_for_server()
-            goal_r = FollowJointTrajectoryGoal()
-            goal_r.trajectory = PR2Controller._create_joint_traj_msg(JOINT_NAMES['right'], 3, q=SAMPLE_STATES['right'])
-            client_r.send_goal(goal_r)
-            client_r.wait_for_result()
+        # if not action:
+        #     self._arm_traj_control_pub['right'].publish(
+        #         PR2Controller._create_joint_traj_msg(JOINT_NAMES['right'], 3, q=SAMPLE_STATES['right']))
+        #     self._arm_traj_control_pub['left'].publish(
+        #         PR2Controller._create_joint_traj_msg(JOINT_NAMES['left'], 3, q=SAMPLE_STATES['left']))
+        # else:
+        #     pass
 
-            client_l = actionlib.SimpleActionClient('l_arm_controller/follow_joint_trajectory', FollowJointTrajectoryAction)
-            client_l.wait_for_server()
-            goal_l = FollowJointTrajectoryGoal()
-            goal_l.trajectory = PR2Controller._create_joint_traj_msg(JOINT_NAMES['left'], 3, q=SAMPLE_STATES['left'])
-            client_l.send_goal(goal_l)
-            client_l.wait_for_result()
+        client_r = actionlib.SimpleActionClient('r_arm_controller/follow_joint_trajectory', FollowJointTrajectoryAction)
+        client_r.wait_for_server()
+        goal_r = FollowJointTrajectoryGoal()
+        goal_r.trajectory = PR2Controller._create_joint_traj_msg(JOINT_NAMES['right'], 3, q=SAMPLE_STATES['right'])
+        client_r.send_goal(goal_r)
+        client_r.wait_for_result()
+
+        client_l = actionlib.SimpleActionClient('l_arm_controller/follow_joint_trajectory', FollowJointTrajectoryAction)
+        client_l.wait_for_server()
+        goal_l = FollowJointTrajectoryGoal()
+        goal_l.trajectory = PR2Controller._create_joint_traj_msg(JOINT_NAMES['left'], 3, q=SAMPLE_STATES['left'])
+        client_l.send_goal(goal_l)
+        client_l.wait_for_result()
+
+        return client_l.wait_for_result()
 
 
 
@@ -361,22 +366,6 @@ class PR2Controller:
             return response.ok
         except rospy.ServiceException as e:
             rospy.logerr(f"Service call failed: {e}")
-
-    @ staticmethod
-    def __joint_group_command_to_msg(values: list):
-        r"""
-        Convert the joint group command to Float64MultiArray message
-
-        Args:
-            values (list): List of joint values
-
-        Returns:
-            Float64MultiArray: Float64MultiArray message
-        """
-
-        msg = Float64MultiArray()
-        msg.data = values
-        return msg
 
     @ staticmethod
     def _create_joint_traj_msg(joint_names: list, dt: float, joint_states: list = None, qdot: list = None, q: list = None):

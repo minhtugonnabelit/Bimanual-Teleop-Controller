@@ -21,23 +21,21 @@ class BMCP:
             name='teleop_test', log_level=2, rate=CONTROL_RATE)
         
         self.controller.set_manip_thresh(0.1)
-        self.controller.move_to_neutral(action=True)
+        self.controller.move_to_neutral()
         rospy.loginfo('Neutral position reached.')
         rospy.sleep(5)
-        
-        rospy.loginfo('Start teleop using joystick')
 
         # State variables
 
-        self.constraint_is_set = False
+        self._constraint_is_set = False
         self._state = 'individual'
 
         # Control signals and locks
 
-        self.qdot_right = np.zeros(7)
+        self._qdot_right = np.zeros(7)
         self._qdot_right_lock = threading.Lock()
 
-        self.qdot_left = np.zeros(7)
+        self._qdot_left = np.zeros(7)
         self._qdot_left_lock = threading.Lock()
 
         self.control_signal_thread = threading.Thread(target=self.control_signal_handler)
@@ -64,6 +62,7 @@ class BMCP:
         constraint_is_set = False
         done = False
         self.switch_to_central_control()
+        rospy.loginfo('Start teleop using joystick')
         rospy.wait_for_message('/joy', Joy)
 
         while not done:
@@ -144,8 +143,8 @@ class BMCP:
                     qdot += drift
 
                 # # Control signal send from this block
-                self.qdot_right = qdot[7:]
-                self.qdot_left = qdot[:7]
+                self._qdot_right = qdot[7:]
+                self._qdot_left = qdot[:7]
 
             # ---------------------- #
 
@@ -192,7 +191,7 @@ class BMCP:
 
                 if left_joy_msg[1][0] and right_joy_msg[1][0]:
                     if self._state == 'central':
-                        self.constraint_is_set = False  # Reset the constraint condition
+                        self._constraint_is_set = False  # Reset the constraint condition
                         self.switch_to_individual_control()
                     else:
                         self.switch_to_central_control()
@@ -275,8 +274,8 @@ class BMCP:
                     jacob, twist_msg, w_thresh=0.1)
 
             with qdot_lock: 
-                if side == 'r': self.qdot_right = copy.deepcopy(qd)
-                else: self.qdot_left = copy.deepcopy(qd)
+                if side == 'r': self._qdot_right = copy.deepcopy(qd)
+                else: self._qdot_left = copy.deepcopy(qd)
 
             if joy_msg[1][3]: arm.open_gripper()
             if joy_msg[1][2]: arm.close_gripper()
@@ -287,9 +286,9 @@ class BMCP:
 
         synced = False
 
-        if not self.constraint_is_set:
+        if not self._constraint_is_set:
 
-            self.constraint_is_set, _, constraint_distance = self.controller.set_kinematics_constraints()
+            self._constraint_is_set, _, constraint_distance = self.controller.set_kinematics_constraints()
             self.controller.store_constraint_distance(constraint_distance)
             rospy.loginfo(
                 'Constraint is set, switching controllers, started velocity controller thread')
@@ -323,11 +322,8 @@ class BMCP:
                 qdot += drift
 
             # # Control signal send from this block
-            with self._qdot_right_lock: 
-                self.qdot_right = qdot[7:]
-
-            with self._qdot_left_lock: 
-                self.qdot_left = qdot[:7]
+            with self._qdot_right_lock: self._qdot_right = qdot[7:]
+            with self._qdot_left_lock: self._qdot_left = qdot[:7]
 
             if joy_msg[1][3]:
                 self.controller.left_arm.open_gripper()
@@ -344,28 +340,10 @@ class BMCP:
 
                 self.controller.store_manipulability()
                 self.controller.store_drift()
-            print(self.qdot_right)
-            self.controller.right_arm.send_joint_command(joint_command=self.qdot_right)
-            self.controller.left_arm.send_joint_command(joint_command=self.qdot_left)
+
+            self.controller.right_arm.send_joint_command(joint_command=self._qdot_right)
+            self.controller.left_arm.send_joint_command(joint_command=self._qdot_left)
             self.controller.sleep()
-
-    def control_signal_handler_v1(self):
-
-        # Record the joints data
-
-        self.controller.store_joint_velocities('right', self.qdot_right)
-        self.controller.store_joint_velocities('left', self.qdot_left)
-        self.controller.store_manipulability()
-        self.controller.store_drift()
-
-        # send  the control signal
-
-        self.controller.send_joint_velocities(
-            side='right', qdot=self.qdot_right)
-        self.controller.send_joint_velocities(
-            side='left', qdot=self.qdot_left)
-        
-        self.controller.sleep()
 
     @staticmethod
     def debounce(last_switch_time, debounce_interval=1):
@@ -394,7 +372,7 @@ class BMCP:
     #             qdot = CalcFuncs.rmrc(
     #                 jacob, twist_msg, w_thresh=0.1)
 
-    #         with self._qdot_right_lock: self.qdot_right = copy.deepcopy(qdot)
+    #         with self._qdot_right_lock: self._qdot_right = copy.deepcopy(qdot)
 
     #         if joy_msg[1][3]: self.controller.right_arm.open_gripper()
     #         if joy_msg[1][2]: self.controller.right_arm.close_gripper()
@@ -418,7 +396,7 @@ class BMCP:
     #             qdot_left = CalcFuncs.rmrc(
     #                 jacob_left, twist_msg, w_thresh=0.1)
 
-    #         with self._qdot_left_lock: self.qdot_left = copy.deepcopy(qdot_left)
+    #         with self._qdot_left_lock: self._qdot_left = copy.deepcopy(qdot_left)
 
     #         if joy_msg[1][3]: self.controller.left_arm.open_gripper()
     #         if joy_msg[1][2]: self.controller.left_arm.close_gripper()

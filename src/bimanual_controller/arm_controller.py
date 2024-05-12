@@ -4,6 +4,10 @@ from std_msgs.msg import Float64MultiArray
 
 
 class ArmController:
+    r"""
+    Class to control the arm of the robot
+    """
+        
     def __init__(self,
                  arm: str,
                  arm_group_joint_names: list,
@@ -23,10 +27,6 @@ class ArmController:
         self.gripper_controller_pub = rospy.Publisher(
             "/" + arm + '_gripper_controller/command', gripper_cmd_type, queue_size=10) if enable_gripper else None
 
-    def send_joint_command(self, joint_command):
-        joint_command_msg = Float64MultiArray()
-        joint_command_msg.data = joint_command
-        self.joint_controller_pub.publish(joint_command_msg)
 
     def get_arm_name(self):
         return self.name
@@ -36,6 +36,12 @@ class ArmController:
     
     def get_joint_controller_name(self):
         return self.joint_controller_name
+    
+
+    def send_joint_command(self, joint_command):
+        joint_command_msg = Float64MultiArray()
+        joint_command_msg.data = joint_command
+        self.joint_controller_pub.publish(joint_command_msg)
 
     def open_gripper(self):
         r"""
