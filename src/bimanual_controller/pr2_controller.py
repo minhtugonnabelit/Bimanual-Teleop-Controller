@@ -1,18 +1,27 @@
-import tf
+# /usr/bin/env python3
+
+# This file contains the PR2Controller class that is used to control the PR2 robot
+#
+# The PR2Controller class is used to control the PR2 robot. 
+# It is responsible for setting up the robot model, initializing the arms, and handling the joint states and joystick messages. 
+# It also provides functions to move the robot to a neutral position, open and close the grippers, and send joint velocities to the robot.
+
+import rospy, tf
 from tf import TransformerROS as tfROS
-import rospy
+
+import actionlib
 from std_msgs.msg import Float64MultiArray
 from sensor_msgs.msg import JointState, Joy
 from geometry_msgs.msg import TwistStamped
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from pr2_mechanism_msgs.srv import SwitchController, UnloadController
-from pr2_controllers_msgs.msg import Pr2GripperCommand
+from pr2_controllers_msgs.msg import Pr2GripperCommand, JointTrajectoryAction, JointTrajectoryGoal
+from control_msgs.msg import FollowJointTrajectoryAction, FollowJointTrajectoryGoal
 
 import numpy as np
 import spatialmath as sm
 import roboticstoolbox as rtb
 import matplotlib.pyplot as plt
-import time
 from scipy import linalg, optimize
 
 from bimanual_controller.utility import *
@@ -47,32 +56,10 @@ class PR2Controller:
                                       enable_gripper=True,
                                       gripper_cmd_type=Pr2GripperCommand)
 
-        # Initialize the buffer for the joint velocities recording
-        self._qdot_record = {
-            'left': {'desired': [],  'actual': []},
-            'right': {'desired': [],  'actual': []}
-        }
-        self.constraint_distance = 0
-        self._offset_distance = []
-        self._manipulability = [[], []]
-        self._constraint_is_set = False
-
-        # Initialize the gripper command publishers
-        self._gripper_cmd_pub = {
-            'right': rospy.Publisher('r_gripper_controller/command', Pr2GripperCommand, queue_size=1),
-            'left': rospy.Publisher('l_gripper_controller/command', Pr2GripperCommand, queue_size=1)
-        }
-
         # Initialize arms trajectory controllers publishers
         self._arm_traj_control_pub = {
             'left': rospy.Publisher('l_arm_controller/command', JointTrajectory, queue_size=1),
             'right': rospy.Publisher('r_arm_controller/command', JointTrajectory, queue_size=1)
-        }
-
-        # Initialize the joint group velocity controller publisher
-        self._arms_vel_controller_pub = {
-            'right': rospy.Publisher('/r_arm_joint_group_velocity_controller/command', Float64MultiArray, queue_size=1),
-            'left': rospy.Publisher('/l_arm_joint_group_velocity_controller/command', Float64MultiArray, queue_size=1)
         }
 
         # Initialize the joint states subscriber
@@ -80,10 +67,10 @@ class PR2Controller:
         self._joint_state_sub = rospy.Subscriber(
             '/joint_states', JointState, self.__joint_state_callback)
 
-        # # Initialize the joystick subscriber
-        # self._joy_msg = None
-        # self._joystick_sub = rospy.Subscriber(
-        #     '/joy', Joy, self.__joystick_callback)
+        # Initialize the joystick subscriber
+        self._joy_msg = None
+        self._joystick_sub = rospy.Subscriber(
+            '/joy', Joy, self.__joystick_callback)
 
         self._hydra_joy_msg = {
             'l': None,
@@ -98,6 +85,17 @@ class PR2Controller:
             'r': 'hydra_right_grab'
         }
         self._hydra_base_frame_id = 'hydra_base'
+
+
+        # Initialize the buffer for the joint velocities recording
+        self.constraint_distance = 0
+        self._offset_distance = []
+        self._manipulability = [[], []]
+        self._constraint_is_set = False
+        self._qdot_record = {
+            'left': {'desired': [],  'actual': []},
+            'right': {'desired': [],  'actual': []}
+        }
 
         # Initialize the transform listener
         self._tf_listener = tf.TransformListener()
@@ -114,10 +112,11 @@ class PR2Controller:
         rospy.loginfo('Shutting down the virtual robot')
         PR2Controller.kill_jg_vel_controller()
 
-        fig1, ax1 = plot_joint_velocities(
-            self._qdot_record['left']['actual'], self._qdot_record['left']['desired'], dt=self._dt, title='left')
-        fig2, ax2 = plot_joint_velocities(
-            self._qdot_record['right']['actual'], self._qdot_record['right']['desired'], dt=self._dt, title='right')
+        # fig1, ax1 = plot_joint_velocities(
+        #     self._qdot_record['left']['actual'], self._qdot_record['left']['desired'], dt=self._dt, title='left')
+        # fig2, ax2 = plot_joint_velocities(
+        #     self._qdot_record['right']['actual'], self._qdot_record['right']['desired'], dt=self._dt, title='right')
+
         fig3, ax3 = plot_manip_and_drift(
             self.constraint_distance,
             self.manip_thresh,
@@ -179,51 +178,33 @@ class PR2Controller:
         """
         self.manip_thresh = manip_thresh
 
-    def move_to_neutral(self):
+    def move_to_neutral(self, action = False):
         r"""
         Move the robot to neutral position
         :return: None
         """
-        self._arm_traj_control_pub['right'].publish(
-            PR2Controller.__create_joint_traj_msg(JOINT_NAMES['right'], 3, q=SAMPLE_STATES['right']))
-        self._arm_traj_control_pub['left'].publish(
-            PR2Controller.__create_joint_traj_msg(JOINT_NAMES['left'], 3, q=SAMPLE_STATES['left']))
+        if not action:
+            self._arm_traj_control_pub['right'].publish(
+                PR2Controller._create_joint_traj_msg(JOINT_NAMES['right'], 3, q=SAMPLE_STATES['right']))
+            self._arm_traj_control_pub['left'].publish(
+                PR2Controller._create_joint_traj_msg(JOINT_NAMES['left'], 3, q=SAMPLE_STATES['left']))
+        else:
+            client_r = actionlib.SimpleActionClient('r_arm_controller/follow_joint_trajectory', FollowJointTrajectoryAction)
+            client_r.wait_for_server()
+            goal_r = FollowJointTrajectoryGoal()
+            goal_r.trajectory = PR2Controller._create_joint_traj_msg(JOINT_NAMES['right'], 3, q=SAMPLE_STATES['right'])
+            client_r.send_goal(goal_r)
+            client_r.wait_for_result()
 
-    def send_joint_velocities(self, side: str, qdot: list):
-        r"""
-        Send the joint velocities to the robot
-        :param side: side of the robot
-        :param qdot: list of joint velocities
-        :return: None
-        """
+            client_l = actionlib.SimpleActionClient('l_arm_controller/follow_joint_trajectory', FollowJointTrajectoryAction)
+            client_l.wait_for_server()
+            goal_l = FollowJointTrajectoryGoal()
+            goal_l.trajectory = PR2Controller._create_joint_traj_msg(JOINT_NAMES['left'], 3, q=SAMPLE_STATES['left'])
+            client_l.send_goal(goal_l)
+            client_l.wait_for_result()
 
-        self._arms_vel_controller_pub[side].publish(
-            PR2Controller.__joint_group_command_to_msg(qdot))
 
-    # Gripper functions
 
-    def open_gripper(self, side: str):
-        r"""
-        open the gripper
-        :param side: side of the robot
-        :return: None
-        """
-        msg = Pr2GripperCommand()
-        msg.position = 0.08
-        msg.max_effort = 10.0
-        self._gripper_cmd_pub[side].publish(msg)
-
-    def close_gripper(self, side: str):
-        r"""
-        Close the gripper
-        :param side: side of the robot
-        :return: None
-        """
-
-        msg = Pr2GripperCommand()
-        msg.position = 0.0
-        msg.max_effort = 10.0
-        self._gripper_cmd_pub[side].publish(msg)
 
     # Callback functions
 
@@ -275,7 +256,7 @@ class PR2Controller:
 
         return self._hydra_joy_msg[side]
 
-    def get_twist(self, side: str, synced=False):
+    def get_twist(self, side: str, synced=False, gain=[1, 1]):
         r"""
         Get the twist of the specified side hydra grab frame in the hydra base frame
         :param side: side of the robot
@@ -298,8 +279,8 @@ class PR2Controller:
             self._controller_frame_id[side], self._hydra_base_frame_id, rospy.Time(), rospy.Duration(1/CONTROL_RATE)) if synced else None
         
         xdot = np.zeros(6)
-        xdot[:3] = np.array(twist[0]) * 3
-        xdot[3:] = np.array(twist[1]) * 3
+        xdot[:3] = np.array(twist[0])
+        xdot[3:] = np.array(twist[1])
 
         return xdot, synced
 
@@ -398,7 +379,7 @@ class PR2Controller:
         return msg
 
     @ staticmethod
-    def __create_joint_traj_msg(joint_names: list, dt: float, joint_states: list = None, qdot: list = None, q: list = None):
+    def _create_joint_traj_msg(joint_names: list, dt: float, joint_states: list = None, qdot: list = None, q: list = None):
         r"""
         Create a joint trajectory message.
         If q desired is not provided, the joint velocities are used to calculate the joint positions

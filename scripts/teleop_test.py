@@ -18,30 +18,53 @@ class BMCP:
     def __init__(self) -> None:
 
         self.controller = PR2Controller(
-            name='teleop_test', log_level=1, rate=CONTROL_RATE)
-
+            name='teleop_test', log_level=2, rate=CONTROL_RATE)
+        
         self.controller.set_manip_thresh(0.1)
-
+        self.controller.move_to_neutral(action=True)
+        rospy.loginfo('Neutral position reached.')
+        rospy.sleep(5)
+        
         rospy.loginfo('Start teleop using joystick')
-        # rospy.wait_for_message('/joy', Joy)
+
+        # State variables
 
         self.constraint_is_set = False
         self._state = 'individual'
-        self.qdot_left = np.zeros(7)
+
+        # Control signals and locks
+
         self.qdot_right = np.zeros(7)
-
         self._qdot_right_lock = threading.Lock()
-        self._qdot_left_lock = threading.Lock()
-        # self.rate = rospy.Rate(CONTROL_RATE)
 
-        self.control_signal_thread = threading.Thread(
-            target=self.control_signal_handler)
+        self.qdot_left = np.zeros(7)
+        self._qdot_left_lock = threading.Lock()
+
+        self.control_signal_thread = threading.Thread(target=self.control_signal_handler)
+        
+    # State machine functions
+
+    def switch_to_individual_control(self):
+        self._state = 'individual'
+
+    def switch_to_central_control(self):
+        self._state = 'central'
+
+    def stop(self):
+        self._state = 'Done'
+
+    # Initial teleoperation function with XBOX joystick
 
     def teleop_test(self):
+        r"""
+        Initial teleoperation function with XBOX joystick
+        """
 
         # State variables
         constraint_is_set = False
         done = False
+        self.switch_to_central_control()
+        rospy.wait_for_message('/joy', Joy)
 
         while not done:
 
@@ -57,6 +80,7 @@ class BMCP:
 
             # Trigger the controller to move to neutral position
             if joy_msg[1][-3]:
+                rospy.loginfo('Moving to neutral position')
                 self.controller.move_to_neutral()
 
             if joy_msg[1][4]:
@@ -141,54 +165,56 @@ class BMCP:
             time.sleep(1/(CONTROL_RATE*10))
 
     def teleop_with_hand_motion(self):
+
         r"""
         Similar system to the coordination part of teleop_test, except for the beginning already start with
-        joint_group_vel_controller vel cmd input from montion controller interface instead of letting trajectory-liked motion to set the initial state for setting the constraint
+        joint_group_vel_controller vel cmd input from montion controller interface instead of 
+        letting trajectory-liked motion to set the initial state for setting the constraint
         """
+
         # State variables
         last_switch_time = 0
 
         rospy.loginfo('Start teleop using Razer Hydra Controller')
 
-        # home = False
-        # while not home:
-        #     self.controller.move_to_neutral()
-        #     home = self.controller.check_neutral()
-        #     print(home)
-
         jgvc_started = self.controller.start_jg_vel_controller()
         if not jgvc_started:
             rospy.logerr('Failed to start joint group velocity controller')
             return
-
+        
         def check_state(last_switch_time):
+
             left_joy_msg = self.controller.get_hydra_joy_msg(side='l')
             right_joy_msg = self.controller.get_hydra_joy_msg(side='r')
-            if left_joy_msg[1][0] and right_joy_msg[1][0]:
-                current_time = time.time()
-                if current_time - last_switch_time >= 1:
-                    last_switch_time = current_time
+
+            debounced, last_switch_time = BMCP.debounce(last_switch_time)
+            if debounced:
+
+                if left_joy_msg[1][0] and right_joy_msg[1][0]:
                     if self._state == 'central':
-                        self.constraint_is_set = False
+                        self.constraint_is_set = False  # Reset the constraint condition
                         self.switch_to_individual_control()
                     else:
                         self.switch_to_central_control()
 
-            elif left_joy_msg[1][1] and right_joy_msg[1][1]:  # TODO add debouncer
-                self.stop()  # Switch to 'Done' state
-            return last_switch_time
+                elif left_joy_msg[1][1] and right_joy_msg[1][1]: 
+                    self.stop()  
 
-        rospy.sleep(1)  # Wait for the controller to start\
+            return last_switch_time
+        
+        # Wait for the controller to start
+        rospy.sleep(1)  
         self.control_signal_thread.start()
 
         while not rospy.is_shutdown() and self._state != 'Done':
 
             if self._state == 'individual':
+
+                rospy.loginfo('Switching to individual control')
+
                 # Start individual control threads
-                left_thread = threading.Thread(
-                    target=self.right_hand_controller)
-                right_thread = threading.Thread(
-                    target=self.left_hand_controller)
+                left_thread = threading.Thread(target=self.hand_controller, args=('l'))
+                right_thread = threading.Thread(target=self.hand_controller, args=('r'))
                 left_thread.start()
                 right_thread.start()
 
@@ -203,9 +229,11 @@ class BMCP:
                 right_thread.join()
 
             elif self._state == 'central':
+
+                rospy.loginfo('Switching to central control')
+
                 # Start central control thread
-                central_thread = threading.Thread(
-                    target=self.central_controller)
+                central_thread = threading.Thread(target=self.central_controller)
                 central_thread.start()
 
                 # Wait for state change
@@ -226,73 +254,34 @@ class BMCP:
             else:
                 raise ValueError('Invalid state')
 
-    def switch_to_individual_control(self):
-        self._state = 'individual'
-
-    def switch_to_central_control(self):
-        self._state = 'central'
-
-    def stop(self):
-        self._state = 'Done'
-
-    def right_hand_controller(self):
+    def hand_controller(self, side):
 
         synced = False
+        arm = self.controller.right_arm if side == 'r' else self.controller.left_arm
+        qdot_lock = self._qdot_right_lock if side == 'r' else self._qdot_left_lock
+
         while self._state == 'individual':
 
-            print('bruh')
-
-            qdot = np.zeros(7)
-            joy_msg = self.controller.get_hydra_joy_msg(side='r')
-            twist_msg, synced = self.controller.get_twist(
-                side='r', synced=synced)
+            qd = np.zeros(7)
+            joy_msg = self.controller.get_hydra_joy_msg(side=side)
+            twist_msg, synced = self.controller.get_twist(side=side, synced=synced,  gain=TWIST_GAIN)
 
             if not synced:
                 continue
 
             if joy_msg[1][-2]:  # Safety trigger to allow control signal to be sent
-                print('Joy msg: ', joy_msg[1][-2])
-                jacob = self.controller.get_jacobian(side='r')
-                qdot = CalcFuncs.rmrc(
+                jacob = self.controller.get_jacobian(side=side)
+                qd = CalcFuncs.rmrc(
                     jacob, twist_msg, w_thresh=0.1)
 
-            with self._qdot_right_lock: 
-                self.qdot_right = copy.deepcopy(qdot)
+            with qdot_lock: 
+                if side == 'r': self.qdot_right = copy.deepcopy(qd)
+                else: self.qdot_left = copy.deepcopy(qd)
 
-            # if joy_msg[1][3]:
-            #     self.controller.right_arm.open_gripper()
-            # elif joy_msg[1][2]:
-            #     self.controller.right_arm.close_gripper()
+            if joy_msg[1][3]: arm.open_gripper()
+            if joy_msg[1][2]: arm.close_gripper()
 
-            rospy.sleep(1/(CONTROL_RATE*10))
-
-    def left_hand_controller(self):
-
-        synced = False
-
-        while self._state == 'individual':
-
-            qdot_left = np.zeros(7)
-            joy_msg = self.controller.get_hydra_joy_msg(side='l')
-            twist_msg, synced = self.controller.get_twist(
-                side='l', synced=synced)
-            if not synced:
-                continue
-
-            if joy_msg[1][-2]:
-                jacob_left = self.controller.get_jacobian(side='l')
-                qdot_left = CalcFuncs.rmrc(
-                        jacob_left, twist_msg, w_thresh=0.1)
-                
-            with self._qdot_left_lock:        
-                self.qdot_left = copy.deepcopy(qdot_left)
-
-            # if joy_msg[1][3]:
-            #     self.controller.left_arm.open_gripper()
-            # elif joy_msg[1][2]:
-            #     self.controller.left_arm.close_gripper()
-
-            rospy.sleep(1/(CONTROL_RATE*10))
+            rospy.sleep(0.02)
 
     def central_controller(self):
 
@@ -309,8 +298,8 @@ class BMCP:
 
             qdot = np.zeros(14)
 
-            joy_msg = self.controller.get_hydra_joy_msg(side='l')
-            twist_msg, synced = self.controller.get_twist(side='l', synced=synced)
+            joy_msg = self.controller.get_hydra_joy_msg(side='r')
+            twist_msg, synced = self.controller.get_twist(side='r', synced=synced, gain=TWIST_GAIN)
 
             if joy_msg[1][-2]:
 
@@ -336,6 +325,7 @@ class BMCP:
             # # Control signal send from this block
             with self._qdot_right_lock: 
                 self.qdot_right = qdot[7:]
+
             with self._qdot_left_lock: 
                 self.qdot_left = qdot[:7]
 
@@ -348,32 +338,93 @@ class BMCP:
 
     def control_signal_handler(self):
 
-        while not rospy.is_shutdown():
-
-            # Record the joints data
-
-            # self.controller.store_joint_velocities('right', self.qdot_right)
-            # self.controller.store_joint_velocities('left', self.qdot_left)
-            # self.controller.store_manipulability()
-            # self.controller.store_drift()
+        while self._state != 'Done':
 
             if self._state != 'individual':
+
                 self.controller.store_manipulability()
                 self.controller.store_drift()
-
-            # send  the control signal
-
-            # self.controller.send_joint_velocities(
-            #     side='right', qdot=self.qdot_right)
-            # self.controller.send_joint_velocities(
-            #     side='left', qdot=self.qdot_left)
-
-            self.controller.right_arm.send_joint_command(
-                joint_command=self.qdot_right)
-            self.controller.left_arm.send_joint_command(
-                joint_command=self.qdot_left)
-
+            print(self.qdot_right)
+            self.controller.right_arm.send_joint_command(joint_command=self.qdot_right)
+            self.controller.left_arm.send_joint_command(joint_command=self.qdot_left)
             self.controller.sleep()
+
+    def control_signal_handler_v1(self):
+
+        # Record the joints data
+
+        self.controller.store_joint_velocities('right', self.qdot_right)
+        self.controller.store_joint_velocities('left', self.qdot_left)
+        self.controller.store_manipulability()
+        self.controller.store_drift()
+
+        # send  the control signal
+
+        self.controller.send_joint_velocities(
+            side='right', qdot=self.qdot_right)
+        self.controller.send_joint_velocities(
+            side='left', qdot=self.qdot_left)
+        
+        self.controller.sleep()
+
+    @staticmethod
+    def debounce(last_switch_time, debounce_interval=1):
+        current_time = time.time()
+        if current_time - last_switch_time >= debounce_interval:
+            last_switch_time = current_time
+            return True, last_switch_time
+        else:
+            return False, last_switch_time
+
+
+    # def right_hand_controller(self):
+
+    #     synced = False
+    #     while self._state == 'individual':
+
+    #         qdot = np.zeros(7)
+    #         joy_msg = self.controller.get_hydra_joy_msg(side='r')
+    #         twist_msg, synced = self.controller.get_twist(side='r', synced=synced,  gain=TWIST_GAIN)
+
+    #         if not synced:
+    #             continue
+
+    #         if joy_msg[1][-2]:  # Safety trigger to allow control signal to be sent
+    #             jacob = self.controller.get_jacobian(side='r')
+    #             qdot = CalcFuncs.rmrc(
+    #                 jacob, twist_msg, w_thresh=0.1)
+
+    #         with self._qdot_right_lock: self.qdot_right = copy.deepcopy(qdot)
+
+    #         if joy_msg[1][3]: self.controller.right_arm.open_gripper()
+    #         if joy_msg[1][2]: self.controller.right_arm.close_gripper()
+
+    #         rospy.sleep(0.02)
+
+    # def left_hand_controller(self):
+
+    #     synced = False
+
+    #     while self._state == 'individual':
+
+    #         qdot_left = np.zeros(7)
+    #         joy_msg = self.controller.get_hydra_joy_msg(side='l')
+    #         twist_msg, synced = self.controller.get_twist(side='l', synced=synced,  gain=TWIST_GAIN)
+    #         if not synced:
+    #             continue
+
+    #         if joy_msg[1][-2]:
+    #             jacob_left = self.controller.get_jacobian(side='l')
+    #             qdot_left = CalcFuncs.rmrc(
+    #                 jacob_left, twist_msg, w_thresh=0.1)
+
+    #         with self._qdot_left_lock: self.qdot_left = copy.deepcopy(qdot_left)
+
+    #         if joy_msg[1][3]: self.controller.left_arm.open_gripper()
+    #         if joy_msg[1][2]: self.controller.left_arm.close_gripper()
+
+    #         rospy.sleep(0.02)   
+
 
 
 # def main():

@@ -44,7 +44,7 @@ class ArmController:
         :return: None
         """
 
-        msg = self.gripper_cmd_type
+        msg = self.gripper_cmd_type()
         msg.position = 0.08
         msg.max_effort = 10.0
         self.gripper_controller_pub.publish(msg)
@@ -56,7 +56,7 @@ class ArmController:
         :return: None
         """
 
-        msg = self.gripper_cmd_type
+        msg = self.gripper_cmd_type()
         msg.position = 0.0
         msg.max_effort = 10.0
         self.gripper_controller_pub.publish(msg)

@@ -184,11 +184,9 @@ class CalcFuncs():
 
 class AnimateFuncs():
 
-    def __init__(self):
-        pass
 
-    # Function for visualiztion of the frames in the 3D plot using Matplotlib
-    def add_frame_to_plot(ax, tf, label=''):
+    @classmethod
+    def add_frame_to_plot(cls, ax, tf, label=''):
         r"""
         Adds a transformation frame to an existing 3D plot and returns the plotted objects.
 
@@ -224,7 +222,8 @@ class AnimateFuncs():
 
         return quivers, text
 
-    def animate_frame(tf, quivers, text, ax):
+    @classmethod
+    def animate_frame(cls, tf, quivers, text, ax):
 
         if quivers:
             for q in quivers:
@@ -427,9 +426,9 @@ def plot_manip_and_drift(constraint_distance: float, manipulabity_threshold: flo
     - The figure and axes objects.
     """
 
-    fig, ax = plt.subplots(2, 2, figsize=(18, 10))
 
     # Prepare data
+    fig, ax = plt.subplots(2, 2, figsize=(18, 10))
     time_space = np.linspace(0, len(drift) * dt, len(drift))
     manip_axes = ax[0, 0]
     drift_axes = ax[0, 1]
@@ -437,7 +436,8 @@ def plot_manip_and_drift(constraint_distance: float, manipulabity_threshold: flo
     # Plot manipulability data    # Plot drift data
     if len(manip_r) != len(time_space):
         time_space = np.linspace(0, len(manip_r)
-                                 * dt, len(manip_r))
+                                 * dt, len(manip_r) + 1)
+        
     manip_axes.plot(time_space, manip_l, 'r', linewidth=1)
     manip_axes.plot(time_space, manip_r, 'b', linewidth=1)
     manip_axes.set_title('Manipulability graph')
@@ -446,27 +446,43 @@ def plot_manip_and_drift(constraint_distance: float, manipulabity_threshold: flo
     manip_axes.legend(['Left arm', 'Right arm'])
     manip_axes.axhline(y=manipulabity_threshold, color='k',
                        linewidth=1, linestyle='--')
-    manip_axes.annotate(f'Min Left {np.min(manip_l):.4f}', xy=(time_space[np.argmin(manip_l)], np.min(
-        manip_l)), xytext=(10, 0), textcoords='offset points', ha='center', va='bottom', color='r')
-    manip_axes.annotate(f'Min Right {np.min(manip_r):.4f}', xy=(time_space[np.argmin(manip_r)], np.min(
-        manip_r)), xytext=(10, -10), textcoords='offset points', ha='center', va='top', color='b')
+    
+    manip_axes.annotate(f'Min Left {np.min(manip_l):.4f}', 
+                        xy=(time_space[np.argmin(manip_l)], np.min(manip_l)), 
+                        xytext=(10, 0), textcoords='offset points', 
+                        ha='center', va='bottom', color='r')
+    
+    manip_axes.annotate(f'Min Right {np.min(manip_r):.4f}', 
+                        xy=(time_space[np.argmin(manip_r)], np.min(manip_r)), 
+                        xytext=(10, -10), textcoords='offset points', 
+                        ha='center', va='top', color='b')
 
     # Plot drift data
     if len(drift) != len(time_space):
         time_space = np.linspace(0, len(drift)
-                                 * dt, len(drift))
+                                 * dt, len(drift) + 1)
+        
     drift_axes.plot(time_space, drift, 'k', linewidth=1)
     drift_axes.set_title('Drift graph')
     drift_axes.set_xlabel('Time')
     drift_axes.set_ylabel('Distance')
-    drift_axes.set_ylim([0, 0.4])
-    mark = np.size(time_space)/2
+    drift_axes.set_ylim([constraint_distance - 0.2, constraint_distance + 0.2])
     drift_axes.axhline(y=constraint_distance, color='r', linewidth=1)
-    drift_axes.annotate(f'Constraint {constraint_distance:.4f}', xy=(time_space[250], 0.35),
-                        xytext=(10, 0), textcoords='offset points', ha='center', va='bottom', color='r')
-    drift_axes.annotate(f'Max {np.max(drift):.4f}', xy=(time_space[np.argmax(drift)], np.max(
-        drift)), xytext=(10, 0), textcoords='offset points', ha='center', va='bottom', color='k')
-    drift_axes.annotate(f'Min {np.min(drift):.4f}', xy=(time_space[np.argmin(drift)], np.min(
-        drift)), xytext=(10, -10), textcoords='offset points', ha='center', va='top', color='k')
+
+    drift_axes.annotate(f'Constraint {constraint_distance:.4f}',
+                        xy=(time_space[time_space.size//2], 0.35),
+                        xytext=(10, 0),
+                        textcoords='offset points',
+                        ha='center', va='bottom', color='r')
+
+    drift_axes.annotate(f'Max {np.max(drift):.4f}',
+                        xy=(time_space[np.argmax(drift)], np.max(drift)),
+                        xytext=(10, 0), textcoords='offset points',
+                        ha='center', va='bottom', color='k')
+
+    drift_axes.annotate(f'Min {np.min(drift):.4f}',
+                        xy=(time_space[np.argmin(drift)], np.min(drift)),
+                        xytext=(10, -10), textcoords='offset points',
+                        a='center', va='top', color='k')
 
     return fig, ax
