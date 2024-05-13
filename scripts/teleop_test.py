@@ -20,7 +20,7 @@ class BMCP:
         self.controller = PR2Controller(
             name='teleop_test', log_level=2, rate=CONTROL_RATE)
         
-        self.controller.set_manip_thresh(0.1)
+        self.controller.set_manip_thresh(0.07)
         self.controller.move_to_neutral()
         rospy.loginfo('Neutral position reached.')
         rospy.sleep(5)
@@ -125,9 +125,9 @@ class BMCP:
 
                     # Calculate the joint velocities using RMRC
                     qdot_right = CalcFuncs.rmrc(
-                        jacob_right, twist, w_thresh=0.07)
+                        jacob_right, twist, w_thresh=self.controller.manip_thresh)
                     qdot_left = CalcFuncs.rmrc(
-                        jacob_left, twist,  w_thresh=0.07)
+                        jacob_left, twist,  w_thresh=self.controller.manip_thresh)
                     qdot_combined = np.r_[qdot_left, qdot_right]
 
                     qdot = qdot_combined
@@ -183,20 +183,20 @@ class BMCP:
         
         def check_state(last_switch_time):
 
-            left_joy_msg = self.controller.get_hydra_joy_msg(side='l')
+            # left_joy_msg = self.controller.get_hydra_joy_msg(side='l')
             right_joy_msg = self.controller.get_hydra_joy_msg(side='r')
 
             debounced, last_switch_time = BMCP.debounce(last_switch_time)
             if debounced:
 
-                if left_joy_msg[1][0] and right_joy_msg[1][0]:
+                if right_joy_msg[1][0]:
                     if self._state == 'central':
                         self._constraint_is_set = False  # Reset the constraint condition
                         self.switch_to_individual_control()
                     else:
                         self.switch_to_central_control()
 
-                elif left_joy_msg[1][1] and right_joy_msg[1][1]: 
+                elif right_joy_msg[1][1]: 
                     self.stop()  
 
             return last_switch_time
@@ -271,7 +271,7 @@ class BMCP:
             if joy_msg[1][-2]:  # Safety trigger to allow control signal to be sent
                 jacob = self.controller.get_jacobian(side=side)
                 qd = CalcFuncs.rmrc(
-                    jacob, twist_msg, w_thresh=0.1)
+                    jacob, twist_msg, w_thresh=self.controller.manip_thresh)
 
             with qdot_lock: 
                 if side == 'r': self._qdot_right = copy.deepcopy(qd)
@@ -308,8 +308,8 @@ class BMCP:
                 jacob_constraint = np.c_[jacob_left, -jacob_right]
 
                 # Calculate the joint velocities using RMRC
-                qdot_right = CalcFuncs.rmrc(jacob_right, twist_msg, w_thresh=0.07)
-                qdot_left = CalcFuncs.rmrc(jacob_left, twist_msg,  w_thresh=0.07)
+                qdot_right = CalcFuncs.rmrc(jacob_right, twist_msg, w_thresh=self.controller.manip_thresh)
+                qdot_left = CalcFuncs.rmrc(jacob_left, twist_msg,  w_thresh=self.controller.manip_thresh)
                 qdot_combined = np.r_[qdot_left, qdot_right]
 
                 # Perform nullspace projection for qdot_combined on constraint Jacobian to ensure the twist synchronisation

@@ -17,6 +17,7 @@ from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from pr2_mechanism_msgs.srv import SwitchController, UnloadController
 from pr2_controllers_msgs.msg import Pr2GripperCommand, JointTrajectoryAction, JointTrajectoryGoal
 from control_msgs.msg import FollowJointTrajectoryAction, FollowJointTrajectoryGoal
+from pr2_common_action_msgs.msg import TuckArmsAction, TuckArmsGoal, TuckArmsResult
 
 import numpy as np
 import spatialmath as sm
@@ -112,6 +113,8 @@ class PR2Controller:
         self._virtual_robot.shutdown()
         rospy.loginfo('Shutting down the virtual robot')
         PR2Controller.kill_jg_vel_controller()
+        self.move_to_neutral()
+        # self.tuckarms()
 
         # fig1, ax1 = plot_joint_velocities(
         #     self._qdot_record['left']['actual'], self._qdot_record['left']['desired'], dt=self._dt, title='left')
@@ -208,7 +211,20 @@ class PR2Controller:
 
         return client_l.wait_for_result()
 
-
+    def tuckarms(self):
+        r"""
+        Tuck the arms of the robot
+        :return: None
+        """
+        rospy.loginfo('Tucking arms')
+        client = actionlib.SimpleActionClient('pr2_tuck_arm_action', JointTrajectoryAction)
+        client.wait_for_server()
+        rospy.loginfo('Server found')
+        goal = TuckArmsGoal()
+        goal.tuck_left = True
+        goal.tuck_right = True
+        client.send_goal(goal)
+        client.wait_for_result()
 
 
     # Callback functions
@@ -284,8 +300,8 @@ class PR2Controller:
             self._controller_frame_id[side], self._hydra_base_frame_id, rospy.Time(), rospy.Duration(1/CONTROL_RATE)) if synced else None
         
         xdot = np.zeros(6)
-        xdot[:3] = np.array(twist[0])
-        xdot[3:] = np.array(twist[1])
+        xdot[:3] = np.array(twist[0]) * gain[0]
+        xdot[3:] = np.array(twist[1]) * gain[1]
 
         return xdot, synced
 

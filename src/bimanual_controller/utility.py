@@ -13,7 +13,7 @@ import pygame
 import sys
 import matplotlib.pyplot as plt
 
-TWIST_GAIN = [0.2, 0.4]
+TWIST_GAIN = [0.2, 0.2]
 CONTROL_RATE = 20
 SAMPLE_STATES = {
     'left': [np.pi/4, np.pi/6, np.pi/2, -np.pi/2, np.pi/6, -np.pi/4, np.pi/2],
@@ -485,7 +485,7 @@ def plot_manip_and_drift(constraint_distance: float, manipulabity_threshold: flo
     drift_axes.annotate(f'Min {np.min(drift):.4f}',
                         xy=(time_space[np.argmin(drift)], np.min(drift)),
                         xytext=(10, -10), textcoords='offset points',
-                        a='center', va='top', color='k')
+                        ha='center', va='top', color='k')
 
     return fig, ax
 
