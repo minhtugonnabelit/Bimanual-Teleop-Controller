@@ -2,11 +2,12 @@
 
 # This file contains the PR2Controller class that is used to control the PR2 robot
 #
-# The PR2Controller class is used to control the PR2 robot. 
-# It is responsible for setting up the robot model, initializing the arms, and handling the joint states and joystick messages. 
+# The PR2Controller class is used to control the PR2 robot.
+# It is responsible for setting up the robot model, initializing the arms, and handling the joint states and joystick messages.
 # It also provides functions to move the robot to a neutral position, open and close the grippers, and send joint velocities to the robot.
 
-import rospy, tf
+import rospy
+import tf
 from tf import TransformerROS as tfROS
 
 import actionlib
@@ -87,7 +88,6 @@ class PR2Controller:
         }
         self._hydra_base_frame_id = 'hydra_base'
 
-
         # Initialize the buffer for the joint velocities recording
         self.constraint_distance = 0
         self._offset_distance = []
@@ -105,7 +105,6 @@ class PR2Controller:
         rospy.loginfo('Controller ready to go')
         rospy.on_shutdown(self.__clean)
 
-
     def __clean(self):
         r"""
         Clean up function with dedicated shutdown procedure"""
@@ -114,7 +113,6 @@ class PR2Controller:
         rospy.loginfo('Shutting down the virtual robot')
         PR2Controller.kill_jg_vel_controller()
         self.move_to_neutral()
-        # self.tuckarms()
 
         # fig1, ax1 = plot_joint_velocities(
         #     self._qdot_record['left']['actual'], self._qdot_record['left']['desired'], dt=self._dt, title='left')
@@ -182,7 +180,7 @@ class PR2Controller:
         """
         self.manip_thresh = manip_thresh
 
-    def move_to_neutral(self, action = False):
+    def move_to_neutral(self, action=False):
         r"""
         Move the robot to neutral position
         :return: None
@@ -195,17 +193,21 @@ class PR2Controller:
         # else:
         #     pass
 
-        client_r = actionlib.SimpleActionClient('r_arm_controller/follow_joint_trajectory', FollowJointTrajectoryAction)
+        client_r = actionlib.SimpleActionClient(
+            'r_arm_controller/follow_joint_trajectory', FollowJointTrajectoryAction)
         client_r.wait_for_server()
         goal_r = FollowJointTrajectoryGoal()
-        goal_r.trajectory = PR2Controller._create_joint_traj_msg(JOINT_NAMES['right'], 3, q=SAMPLE_STATES['right'])
+        goal_r.trajectory = PR2Controller._create_joint_traj_msg(
+            JOINT_NAMES['right'], 3, q=SAMPLE_STATES['right'])
         client_r.send_goal(goal_r)
         client_r.wait_for_result()
 
-        client_l = actionlib.SimpleActionClient('l_arm_controller/follow_joint_trajectory', FollowJointTrajectoryAction)
+        client_l = actionlib.SimpleActionClient(
+            'l_arm_controller/follow_joint_trajectory', FollowJointTrajectoryAction)
         client_l.wait_for_server()
         goal_l = FollowJointTrajectoryGoal()
-        goal_l.trajectory = PR2Controller._create_joint_traj_msg(JOINT_NAMES['left'], 3, q=SAMPLE_STATES['left'])
+        goal_l.trajectory = PR2Controller._create_joint_traj_msg(
+            JOINT_NAMES['left'], 3, q=SAMPLE_STATES['left'])
         client_l.send_goal(goal_l)
         client_l.wait_for_result()
 
@@ -217,7 +219,8 @@ class PR2Controller:
         :return: None
         """
         rospy.loginfo('Tucking arms')
-        client = actionlib.SimpleActionClient('pr2_tuck_arm_action', JointTrajectoryAction)
+        client = actionlib.SimpleActionClient(
+            'pr2_tuck_arm_action', JointTrajectoryAction)
         client.wait_for_server()
         rospy.loginfo('Server found')
         goal = TuckArmsGoal()
@@ -225,7 +228,6 @@ class PR2Controller:
         goal.tuck_right = True
         client.send_goal(goal)
         client.wait_for_result()
-
 
     # Callback functions
 
@@ -282,7 +284,7 @@ class PR2Controller:
         Get the twist of the specified side hydra grab frame in the hydra base frame
         :param side: side of the robot
         :param synced: flag to check if the transform is synced
-        
+
         :return: TwistStamped message
         """
         try:
@@ -298,7 +300,7 @@ class PR2Controller:
 
         twist = self._tf_listener.lookupTwist(
             self._controller_frame_id[side], self._hydra_base_frame_id, rospy.Time(), rospy.Duration(1/CONTROL_RATE)) if synced else None
-        
+
         xdot = np.zeros(6)
         xdot[:3] = np.array(twist[0]) * gain[0]
         xdot[3:] = np.array(twist[1]) * gain[1]
@@ -322,6 +324,18 @@ class PR2Controller:
 
         return self._virtual_robot.get_jacobian(side)
 
+    def joint_limit_damper(self, qdot, soft_limit) -> list:
+        r"""
+        joint limit avoidance mechanism with speed scaling factor calculated based on
+        how close individual joint to its limit. We then get a list of 2xn scaling factor that range from 0 to 1.
+        The factor will always be 1 unless a joint get into soft limit, thus lead to the general
+        factor that applied entirely to set of joint velocity
+        """
+        x = 1
+        qdot_damped = qdot * x
+
+        return qdot_damped
+
     def get_drift_compensation(self) -> np.ndarray:
         r"""
         Get the drift compensation for the robot
@@ -342,28 +356,24 @@ class PR2Controller:
 
         return np.r_[qdot_fix_left, qdot_fix_right]
 
-    def joint_limit_damper(self, qdot, soft_limit) -> list:
-        r"""
-        joint limit avoidance mechanism with speed scaling factor calculated based on
-        how close individual joint to its limit. We then get a list of 2xn scaling factor that range from 0 to 1.
-        The factor will always be 1 unless a joint get into soft limit, thus lead to the general
-        factor that applied entirely to set of joint velocity
-        """
-        x = 1
-        qdot_damped = qdot * x
+    def tesk_drift_compensation(self, taskspace_compensation=True):
 
-        return qdot_damped
-    
-    def check_neutral(self):
-        r"""
-        Check if the robot is in neutral position
-        :return: bool value
-        """
+        v, _ = rtb.p_servo(self._virtual_robot.get_tool_pose(side=self.left_arm.get_arm_name(), offset=True),
+                           self._virtual_robot.get_tool_pose(
+                               side=self.right_arm.get_arm_name(), offset=True),
+                           gain=6,
+                           threshold=0.001,
+                           method='angle-axis')
 
-        left_neutral = np.allclose(self._joint_states.position[31:38], SAMPLE_STATES['left'], atol=0.01)
-        right_neutral = np.allclose(self._joint_states.position[17:24], SAMPLE_STATES['right'], atol=0.01)
+        if taskspace_compensation:
+            return v
+        else:
+            qdot_fix_left = CalcFuncs.rmrc(self.get_jacobian(
+                self.left_arm.get_arm_name()), v, w_thresh=0.05)
+            qdot_fix_right = CalcFuncs.rmrc(self.get_jacobian(
+                self.right_arm.get_arm_name()), -v, w_thresh=0.05)
 
-        return left_neutral and right_neutral
+            return np.r_[qdot_fix_left, qdot_fix_right]
 
     @ staticmethod
     def __call_service(service_name: str, service_type: str, **kwargs):

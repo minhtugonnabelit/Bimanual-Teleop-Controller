@@ -100,7 +100,7 @@ class CalcFuncs():
 
         # calculate damped least square
         j_dls = np.transpose(jacob) @ np.linalg.inv(jacob @
-                                                    np.transpose(jacob) + damp * np.eye(6))
+                                                    np.transpose(jacob) + np.power(damp,1) * np.eye(6))
 
         # get joint velocities, if robot is in singularity, use damped least square
         qdot = j_dls @ np.transpose(twist)
@@ -387,23 +387,6 @@ def plot_joint_velocities(actual_data: np.ndarray, desired_data: np.ndarray, dt=
 
         joint_axes.set_title(JOINT_NAMES[title][i])
 
-    # # Plot for distance data in the last subplot
-    # distance_axes = ax[1, 3]
-    # if distance_data.shape[0] != len(time_space):
-    #     time_space = np.linspace(0, len(distance_data)
-    #                              * dt, len(distance_data))
-
-    # distance_axes.plot(time_space, distance_data, 'k', linewidth=1)
-    # distance_axes.axhline(y=constraint_distance, color='r', linewidth=1)
-    # distance_axes.set_title("Distance Data")
-    # distance_axes.set_ylim([0, 0.4])
-    # distance_axes.annotate(f'Max {np.max(distance_data):.4f}', xy=(time_space[np.argmax(distance_data)], np.max(distance_data)),
-    #                        xytext=(10, 0), textcoords='offset points', ha='center', va='bottom')
-    # distance_axes.annotate(f'Min {np.min(distance_data):.4f}', xy=(time_space[np.argmin(distance_data)], np.min(distance_data)),
-    #                        xytext=(10, -10), textcoords='offset points', ha='center', va='top')
-    # distance_axes.annotate(f'Constraint {constraint_distance:.4f}', xy=(time_space[-1], 0.35),
-    #                        xytext=(10, 0), textcoords='offset points', ha='center', va='bottom', color='r')
-
     fig.legend(['Actual', 'Desired'], loc='upper right')
     fig.suptitle(title)
 
@@ -439,6 +422,10 @@ def plot_manip_and_drift(constraint_distance: float, manipulabity_threshold: flo
     if len(manip_r) != len(time_space):
         time_space = np.linspace(0, len(manip_r)
                                  * dt, len(manip_r) + 1)
+
+    if len(manip_l) != len(time_space):
+        time_space = np.linspace(0, len(manip_l)
+                                 * dt, len(manip_l) + 1)
         
     manip_axes.plot(time_space, manip_l, 'r', linewidth=1)
     manip_axes.plot(time_space, manip_r, 'b', linewidth=1)
@@ -645,3 +632,5 @@ class FakePR2:
             self._is_collapsed = True
             self._thread.join()
         return True
+    
+    
