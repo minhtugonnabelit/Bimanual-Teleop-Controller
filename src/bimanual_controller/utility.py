@@ -13,16 +13,12 @@ import pygame
 import sys
 import matplotlib.pyplot as plt
 
-TWIST_GAIN = [0.2, 0.2]
 CONTROL_RATE = 20
 SAMPLE_STATES = {
     'left': [np.pi/4, np.pi/6, np.pi/2, -np.pi/2, np.pi/6, -np.pi/4, np.pi/2],
     'right': [-np.pi/4, np.pi/6, -np.pi/2, -np.pi/2, -np.pi/6, -np.pi/4, np.pi/2]
 }
-NEUTRAL_STATES = {
-    'left': [0.05592020315366142, 0.4115547023030020313, 1.223241480964399752, -0.75718229886988179, 0.25000010026008326, -0.48229593735634957, 1.573265592638103776],
-    'right': [-0.05869937106810763, 0.4107752715756987882, -1.223126457438489645, -0.75897762731364821, -0.25000005892831325, -0.4851061342000067, -1.5713531640700703562,]
-}
+
 JOINT_NAMES = {
     "left": [
         "l_shoulder_pan_joint",
@@ -46,10 +42,11 @@ JOINT_NAMES = {
 
 
 class CalcFuncs():
-
-    def __init__(self):
-        pass
-
+    r"""
+    Class to calculate the necessary functions for the robot control.
+    """
+    
+    @staticmethod    
     def adjoint(T):
 
         R = T[:3, :3]
@@ -62,6 +59,7 @@ class CalcFuncs():
 
         return ad
 
+    @staticmethod    
     def manipulability(jacob):
         r"""
         Calculate the manipulability of the robot.
@@ -75,7 +73,8 @@ class CalcFuncs():
         """
 
         return np.sqrt(np.linalg.det(jacob @ np.transpose(jacob)))
-
+    
+    @staticmethod    
     def rmrc(jacob, twist, w_thresh=0.08):
         r"""
         Calculate the joint velocities using the Resolved Motion Rate Control (RMRC) method.
@@ -100,13 +99,14 @@ class CalcFuncs():
 
         # calculate damped least square
         j_dls = np.transpose(jacob) @ np.linalg.inv(jacob @
-                                                    np.transpose(jacob) + np.power(damp,1) * np.eye(6))
+                                                    np.transpose(jacob) + np.power(damp, 1) * np.eye(6))
 
         # get joint velocities, if robot is in singularity, use damped least square
         qdot = j_dls @ np.transpose(twist)
 
         return qdot
-
+    
+    @staticmethod
     def nullspace_projector(m):
         r"""
         Calculate the projection matrix on to the null space of the Jacobian matrix.
@@ -119,7 +119,8 @@ class CalcFuncs():
         """
 
         return np.eye(m.shape[1]) - np.linalg.pinv(m) @ m
-
+    
+    @staticmethod
     def duo_arm_qdot_constraint(jacob_l, jacob_r, twist, activate_nullspace=True):
         r"""
         Calculate the joint velocities using the Resolved Motion Rate Control (RMRC) method for a dual-arm robot.
@@ -144,7 +145,8 @@ class CalcFuncs():
         qdot_r = qdotc[jacob_l.shape[1]:]
 
         return qdot_l, qdot_r
-
+    
+    @staticmethod
     def angle_axis_python(T, Td):
         r"""
         Computes the angle-axis representation of the error between two transformation matrices.
@@ -182,10 +184,54 @@ class CalcFuncs():
         e[3:] = a
 
         return e, angle, axis
+    
+    @staticmethod
+    def weight(x, k):
+        r"""
+        Weighting function for smooth transition between two states.
+
+        Parameters:
+        - x: The input value.
+        - k: The gain for steepness of the transition.
+
+        Returns:
+        - The weighted value.
+        """
+
+        return 1 / (1 + np.exp(-k * (x - 0.5)))
+    
+    @staticmethod
+    def weight_vector(x, k):
+
+        return np.array([CalcFuncs.weight(xi, k) for xi in x])
+    
+    @staticmethod
+    def reorder_values(data):
+        r"""
+        Reorder the joints based on the joint names to use with PR2 feedback data
+
+        Parameters:
+        - joints: The joint values.
+        - joint_names: The joint names.
+
+        Returns:
+        - The reordered joints.
+        """
+
+        if len(data) != 7:
+            raise ValueError("The length of the data should be 7")
+
+        data_array = np.asarray(data)
+        data_array[0], data_array[1], data_array[2], data_array[3], data_array[
+            4] = data_array[1], data_array[2], data_array[0], data_array[4], data_array[3]
+
+        return data_array.tolist()
 
 
 class AnimateFuncs():
-
+    r"""
+    
+    """
 
     @classmethod
     def add_frame_to_plot(cls, ax, tf, label=''):
@@ -255,7 +301,6 @@ def joy_init():
 
     return joystick
 
-
 def joy_to_twist(joy, gain):
     r"""
 
@@ -297,7 +342,7 @@ def joy_to_twist(joy, gain):
             done = True
 
         vz = ((lpf(joy[0][5] + 1)) - (lpf(joy[0][2] + 1)))/2
-        y = 0
+        y = joy[1][1] * 0.5 - joy[1][3] * 0.5
 
         # Low pass filter
         vy = lpf(joy[0][0])
@@ -312,7 +357,6 @@ def joy_to_twist(joy, gain):
 
     return twist, done
 
-
 def lpf(value, threshold=0.2):
     r"""
     Low pass filter for the joystick data.
@@ -320,32 +364,8 @@ def lpf(value, threshold=0.2):
 
     return value if abs(value) > threshold else 0
 
-
 def map_interval(x):
     return 0.03 * (x + 1)
-
-
-def reorder_values(data):
-    r"""
-    Reorder the joints based on the joint names to use with PR2 feedback data
-
-    Parameters:
-    - joints: The joint values.
-    - joint_names: The joint names.
-
-    Returns:
-    - The reordered joints.
-    """
-
-    if len(data) != 7:
-        raise ValueError("The length of the data should be 7")
-
-    data_array = np.asarray(data)
-    data_array[0], data_array[1], data_array[2], data_array[3], data_array[
-        4] = data_array[1], data_array[2], data_array[0], data_array[4], data_array[3]
-
-    return data_array.tolist()
-
 
 def plot_joint_velocities(actual_data: np.ndarray, desired_data: np.ndarray, dt=0.001, title='Joint Velocities'):
 
@@ -395,8 +415,14 @@ def plot_joint_velocities(actual_data: np.ndarray, desired_data: np.ndarray, dt=
 
     return fig, ax
 
-
-def plot_manip_and_drift(constraint_distance: float, manipulabity_threshold: float, drift: np.ndarray, manip_l: np.ndarray, manip_r: list, dt=0.001):
+def plot_manip_and_drift(constraint_distance: float, 
+                         manipulabity_threshold: float, 
+                         joint_limits : np.ndarray, 
+                         joint_positions : np.ndarray ,
+                         joint_velocities: np.ndarray, 
+                         drift: np.ndarray, 
+                         manip: np.ndarray, 
+                         dt=0.001):
     r"""
     Plot the manipulability and drift data for the PR2 robot.
 
@@ -411,12 +437,43 @@ def plot_manip_and_drift(constraint_distance: float, manipulabity_threshold: flo
     - The figure and axes objects.
     """
 
-
     # Prepare data
-    fig, ax = plt.subplots(2, 2, figsize=(18, 10))
+    fig, ax = plt.subplots(3, 2, figsize=(18, 8))
     time_space = np.linspace(0, len(drift) * dt, len(drift))
     manip_axes = ax[0, 0]
     drift_axes = ax[0, 1]
+    manip_l = manip[0]
+    manip_r = manip[1]    
+    joint_pos_axes = ax[1, :]
+    joint_vel_axes = ax[2, :]
+
+    joint_limits = {
+        'left': [joint_limits[0][:7], joint_limits[1][:7]],
+        'right': [joint_limits[0][7:], joint_limits[1][7:]]
+    }
+
+    # Plot joint positions
+
+    if len(joint_positions[0]) != len(time_space):
+        time_space = np.linspace(0, len(joint_positions['l'])
+                                 * dt, len(joint_positions['l']) + 1)
+
+    for i, side in enumerate(['left', 'right']):
+        for j in range(7):  # Assuming there are 7 joints
+            joint_data = np.array([d[j] for d in joint_positions[i]])
+            joint_pos_axes[i].plot(time_space, joint_data, label=f'Joint {j+1}')
+            joint_pos_axes[i].axhline(y=joint_limits[side][0][j], color='r', linestyle='--')  # Lower limit
+            joint_pos_axes[i].axhline(y=joint_limits[side][1][j], color='g', linestyle='--')  # Upper limit
+        joint_pos_axes[i].set_title(f'{side.capitalize()} Arm Joint Positions')
+        joint_pos_axes[i].legend()
+
+    # Plot joint velocities
+    for i, side in enumerate(['left', 'right']):
+        for j in range(7):  # Assuming there are 7 joints
+            joint_data = np.array([d[j] for d in joint_velocities[side]])
+            joint_vel_axes[i].plot(time_space, joint_data, label=f'Joint {j+1}')
+        joint_vel_axes[i].set_title(f'{side.capitalize()} Arm Joint Velocities')
+        joint_vel_axes[i].legend()
 
     # Plot manipulability data    # Plot drift data
     if len(manip_r) != len(time_space):
@@ -426,7 +483,7 @@ def plot_manip_and_drift(constraint_distance: float, manipulabity_threshold: flo
     if len(manip_l) != len(time_space):
         time_space = np.linspace(0, len(manip_l)
                                  * dt, len(manip_l) + 1)
-        
+
     manip_axes.plot(time_space, manip_l, 'r', linewidth=1)
     manip_axes.plot(time_space, manip_r, 'b', linewidth=1)
     manip_axes.set_title('Manipulability graph')
@@ -435,22 +492,22 @@ def plot_manip_and_drift(constraint_distance: float, manipulabity_threshold: flo
     manip_axes.legend(['Left arm', 'Right arm'])
     manip_axes.axhline(y=manipulabity_threshold, color='k',
                        linewidth=1, linestyle='--')
-    
-    manip_axes.annotate(f'Min Left {np.min(manip_l):.4f}', 
-                        xy=(time_space[np.argmin(manip_l)], np.min(manip_l)), 
-                        xytext=(10, 0), textcoords='offset points', 
+
+    manip_axes.annotate(f'Min Left {np.min(manip_l):.4f}',
+                        xy=(time_space[np.argmin(manip_l)], np.min(manip_l)),
+                        xytext=(10, 0), textcoords='offset points',
                         ha='center', va='bottom', color='r')
-    
-    manip_axes.annotate(f'Min Right {np.min(manip_r):.4f}', 
-                        xy=(time_space[np.argmin(manip_r)], np.min(manip_r)), 
-                        xytext=(10, -10), textcoords='offset points', 
+
+    manip_axes.annotate(f'Min Right {np.min(manip_r):.4f}',
+                        xy=(time_space[np.argmin(manip_r)], np.min(manip_r)),
+                        xytext=(10, -10), textcoords='offset points',
                         ha='center', va='top', color='b')
 
     # Plot drift data
     if len(drift) != len(time_space):
         time_space = np.linspace(0, len(drift)
                                  * dt, len(drift) + 1)
-        
+
     drift_axes.plot(time_space, drift, 'k', linewidth=1)
     drift_axes.set_title('Drift graph')
     drift_axes.set_xlabel('Time')
@@ -475,6 +532,7 @@ def plot_manip_and_drift(constraint_distance: float, manipulabity_threshold: flo
                         ha='center', va='top', color='k')
 
     return fig, ax
+
 
 class FakePR2:
 
@@ -505,6 +563,13 @@ class FakePR2:
             }
         }
 
+        # Get the joint limits and form the symmetric soft limits
+        qmin, qmax = self.get_joint_limits_all()
+        self.qmid = (qmin + qmax) / 2
+        self.soft_limit_start = ((qmax - qmin)/2) * 0.75
+        self.soft_limit_end = ((qmax - qmin)/2) * 0.9
+        self.soft_limit_range = (self.soft_limit_end - self.soft_limit_start)
+
         if self._launch_visualizer:
             self._env = Swift()
             self._env.launch()
@@ -512,6 +577,23 @@ class FakePR2:
             self._thread = threading.Thread(target=self.timeline)
             self._thread.start()
 
+    def init_visualization(self):
+        r"""
+        Initialize the visualization of the robot
+
+        :return: None
+        """
+
+        self._left_ax = geometry.Axes(length=0.05, pose=self._robot.fkine(
+            self._robot.q, end=self._arms_frame['l']['end'], tool=self._tool_offset['l']).A)
+
+        self._right_ax = geometry.Axes(length=0.05, pose=self._robot.fkine(
+            self._robot.q, end=self._arms_frame['r']['end'], tool=self._tool_offset['r']).A)
+
+        self._env.add(self._robot)
+        self._env.add(self._left_ax)
+        self._env.add(self._right_ax)
+    
     def timeline(self):
         r"""
         Timeline function to update the visualization
@@ -541,8 +623,8 @@ class FakePR2:
         :return: None
         """
         if real_robot:
-            right_js = reorder_values(joint_states[17:24])
-            left_js = reorder_values(joint_states[31:38])
+            right_js = CalcFuncs.reorder_values(joint_states[17:24])
+            left_js = CalcFuncs.reorder_values(joint_states[31:38])
         else:
             right_js = joint_states[0:7]
             left_js = joint_states[7:14]
@@ -558,24 +640,7 @@ class FakePR2:
             self._right_ax.T = self._robot.fkine(
                 self._robot.q, end=self._arms_frame['r']['end'], tool=self._tool_offset['r']).A
 
-    def init_visualization(self):
-        r"""
-        Initialize the visualization of the robot
-
-        :return: None
-        """
-
-        self._left_ax = geometry.Axes(length=0.05, pose=self._robot.fkine(
-            self._robot.q, end=self._arms_frame['l']['end'], tool=self._tool_offset['l']).A)
-
-        self._right_ax = geometry.Axes(length=0.05, pose=self._robot.fkine(
-            self._robot.q, end=self._arms_frame['r']['end'], tool=self._tool_offset['r']).A)
-
-        self._env.add(self._robot)
-        self._env.add(self._left_ax)
-        self._env.add(self._right_ax)
-
-    def get_tool_pose(self, side:str, offset=True):
+    def get_tool_pose(self, side: str, offset=True):
         r"""
         Get the tool pose of the robot
         :param side: side of the robot
@@ -586,8 +651,8 @@ class FakePR2:
         tool = self._tool_offset[side] if offset else np.eye(4)
 
         return self._robot.fkine(self._robot.q, end=self._arms_frame[side]['end'], tool=tool).A
-    
-    def get_joint_positions(self, side : str):
+
+    def get_joint_positions(self, side: str):
         r"""
         Get the joint states of the robot
         :return: joint states
@@ -596,6 +661,29 @@ class FakePR2:
             return self._robot.q[23:30]
         else:
             return self._robot.q[16:23]
+        
+    def get_joint_limits(self, side):
+        r"""
+        Get the joint limits of the robot
+        :param side: side of the robot
+        :return: joint limits
+        """
+        return self._robot.qlim[0][16:23] if side == 'r' else self._robot.qlim[0][23:30], self._robot.qlim[1][16:23] if side == 'r' else self._robot.qlim[1][23:30]
+        
+    def get_joint_limits_all(self):
+        r"""
+        Get the joint limits of the robot
+    
+        First 7 joints are for the left arm and the next 7 joints are for the right arm
+        :return: joint limits   
+        """
+
+        qmin_l, qmax_l = self.get_joint_limits('l')
+        qmin_r, qmax_r = self.get_joint_limits('r')
+        qmin = np.r_[qmin_l, qmin_r]
+        qmax = np.r_[qmax_l, qmax_r]
+
+        return qmin, qmax
 
     def get_jacobian(self, side):
         r"""
@@ -607,22 +695,52 @@ class FakePR2:
 
         return self._robot.jacobe(self._robot.q, end=self._arms_frame[side]['end'], start=self._arms_frame[side]['start'], tool=self._tool_offset[side])
 
-    def get_drift_compensation(self) -> np.ndarray:
+    def joint_limits_damper(self, qdot, steepness=10):
+        r"""
+        Repulsive potential field for joint limits for both arms
+        :param qdot: joint velocities
+        :param steepness: steepness of the transition
+        :return: repulsive velocity potential field 
+        """
+        # Get the joint positions for next step
+        q = np.r_[self.get_joint_positions(
+            'l'), self.get_joint_positions('r')] + qdot / CONTROL_RATE
+
+        x = np.zeros(qdot.shape[0])
+        for i in range(len(x)):
+            qi, qm, qsls, qsle, qslr = q[i], self.qmid[i],  self.soft_limit_start[i], self.soft_limit_end[i], self.soft_limit_range[i]
+            a = np.abs(qi - qm)
+            if a < qsls:
+                x[i] = 0
+            elif a < qsle and a > qsls:
+                x[i] = np.round(np.abs(a-qsls) / qslr , 4)
+            else:
+                x[i] = 1
+
+        weights = CalcFuncs.weight_vector(x, steepness)
+        qdot_repulsive = - weights.max() * qdot
+
+        return qdot_repulsive, weights.max()
+
+    def task_drift_compensation(self,  gain = 5, taskspace_compensation=True) -> np.ndarray:
         r"""
         Get the drift compensation for the robot
         :return: drift compensation velocities as joint velocities
         """
-        v, _ = rtb.p_servo(self.get_tool_pose(side = 'l', offset=True), 
-                        self.get_tool_pose(side = 'r', offset=True),
-                        1, 0.01,
-                        method='angle-axis')
+        v, _ = rtb.p_servo(self.get_tool_pose(side='l', offset=True),
+                           self.get_tool_pose(side='r', offset=True),
+                           gain=gain,
+                           threshold=0.001,
+                           method='angle-axis')
+
+        if taskspace_compensation:
+            return v
+        else:
+            qdot_fix_left = CalcFuncs.rmrc(self.get_jacobian('l'), v, w_thresh=0.05)
+            qdot_fix_right = CalcFuncs.rmrc(self.get_jacobian('r'), -v, w_thresh=0.05)
+
+            return np.r_[qdot_fix_left, qdot_fix_right]
         
-        # get fix velocities for the drift for both linear and angular velocities
-        qdot_fix_left = CalcFuncs.rmrc(self.get_jacobian('l'), v, w_thresh=0.05)
-        qdot_fix_right = CalcFuncs.rmrc(self.get_jacobian('r'), -v, w_thresh=0.05)
-
-        return np.r_[qdot_fix_left, qdot_fix_right]
-
     def shutdown(self):
         r"""
         Get the joint states of the robot
@@ -632,5 +750,3 @@ class FakePR2:
             self._is_collapsed = True
             self._thread.join()
         return True
-    
-    

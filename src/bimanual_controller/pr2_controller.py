@@ -18,7 +18,6 @@ from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from pr2_mechanism_msgs.srv import SwitchController, UnloadController
 from pr2_controllers_msgs.msg import Pr2GripperCommand, JointTrajectoryAction, JointTrajectoryGoal
 from control_msgs.msg import FollowJointTrajectoryAction, FollowJointTrajectoryGoal
-from pr2_common_action_msgs.msg import TuckArmsAction, TuckArmsGoal, TuckArmsResult
 
 import numpy as np
 import spatialmath as sm
@@ -27,7 +26,6 @@ import matplotlib.pyplot as plt
 from scipy import linalg, optimize
 
 from bimanual_controller.utility import *
-# from bimanual_controller.fakePR2 import FakePR2
 from bimanual_controller.arm_controller import ArmController
 
 
@@ -58,12 +56,6 @@ class PR2Controller:
                                       enable_gripper=True,
                                       gripper_cmd_type=Pr2GripperCommand)
 
-        # # Initialize arms trajectory controllers publishers
-        # self._arm_traj_control_pub = {
-        #     'left': rospy.Publisher('l_arm_controller/command', JointTrajectory, queue_size=1),
-        #     'right': rospy.Publisher('r_arm_controller/command', JointTrajectory, queue_size=1)
-        # }
-
         # Initialize the joint states subscriber
         self._joint_states = None
         self._joint_state_sub = rospy.Subscriber(
@@ -92,8 +84,14 @@ class PR2Controller:
         self.constraint_distance = 0
         self._offset_distance = []
         self._manipulability = [[], []]
+        self._q_record = [[], []]
         self._constraint_is_set = False
         self._qdot_record = {
+            'left': [],
+            'right': []
+        }
+
+        self._qdot_record_PID = {
             'left': {'desired': [],  'actual': []},
             'right': {'desired': [],  'actual': []}
         }
@@ -114,17 +112,15 @@ class PR2Controller:
         PR2Controller.kill_jg_vel_controller()
         self.move_to_neutral()
 
-        # fig1, ax1 = plot_joint_velocities(
-        #     self._qdot_record['left']['actual'], self._qdot_record['left']['desired'], dt=self._dt, title='left')
-        # fig2, ax2 = plot_joint_velocities(
-        #     self._qdot_record['right']['actual'], self._qdot_record['right']['desired'], dt=self._dt, title='right')
-
+        self.joint_limits = self._virtual_robot.get_joint_limits_all()
         fig3, ax3 = plot_manip_and_drift(
             self.constraint_distance,
             self.manip_thresh,
+            self.joint_limits,
+            self._q_record,
+            self._qdot_record,
             self._offset_distance,
-            self._manipulability[0],
-            self._manipulability[1],
+            self._manipulability,
             dt=self._dt)
 
         plt.show()
@@ -180,54 +176,39 @@ class PR2Controller:
         """
         self.manip_thresh = manip_thresh
 
-    def move_to_neutral(self, action=False):
+    def move_to_neutral(self):
         r"""
         Move the robot to neutral position
         :return: None
         """
-        # if not action:
-        #     self._arm_traj_control_pub['right'].publish(
-        #         PR2Controller._create_joint_traj_msg(JOINT_NAMES['right'], 3, q=SAMPLE_STATES['right']))
-        #     self._arm_traj_control_pub['left'].publish(
-        #         PR2Controller._create_joint_traj_msg(JOINT_NAMES['left'], 3, q=SAMPLE_STATES['left']))
-        # else:
-        #     pass
 
         client_r = actionlib.SimpleActionClient(
-            'r_arm_controller/follow_joint_trajectory', FollowJointTrajectoryAction)
+            'r_arm_controller/follow_joint_trajectory',
+            FollowJointTrajectoryAction)
         client_r.wait_for_server()
         goal_r = FollowJointTrajectoryGoal()
         goal_r.trajectory = PR2Controller._create_joint_traj_msg(
-            JOINT_NAMES['right'], 3, q=SAMPLE_STATES['right'])
+            JOINT_NAMES['right'],
+            3,
+            q=SAMPLE_STATES['right'])
+        
         client_r.send_goal(goal_r)
         client_r.wait_for_result()
 
         client_l = actionlib.SimpleActionClient(
-            'l_arm_controller/follow_joint_trajectory', FollowJointTrajectoryAction)
+            'l_arm_controller/follow_joint_trajectory', 
+            FollowJointTrajectoryAction)
         client_l.wait_for_server()
         goal_l = FollowJointTrajectoryGoal()
         goal_l.trajectory = PR2Controller._create_joint_traj_msg(
-            JOINT_NAMES['left'], 3, q=SAMPLE_STATES['left'])
+            JOINT_NAMES['left'], 
+            3, 
+            q=SAMPLE_STATES['left'])
+        
         client_l.send_goal(goal_l)
         client_l.wait_for_result()
 
         return client_l.wait_for_result()
-
-    def tuckarms(self):
-        r"""
-        Tuck the arms of the robot
-        :return: None
-        """
-        rospy.loginfo('Tucking arms')
-        client = actionlib.SimpleActionClient(
-            'pr2_tuck_arm_action', JointTrajectoryAction)
-        client.wait_for_server()
-        rospy.loginfo('Server found')
-        goal = TuckArmsGoal()
-        goal.tuck_left = True
-        goal.tuck_right = True
-        client.send_goal(goal)
-        client.wait_for_result()
 
     # Callback functions
 
@@ -324,56 +305,41 @@ class PR2Controller:
 
         return self._virtual_robot.get_jacobian(side)
 
-    def joint_limit_damper(self, qdot, soft_limit) -> list:
+    def joint_limit_damper(self, qdot, steepness=10) -> list:
         r"""
         joint limit avoidance mechanism with speed scaling factor calculated based on
         how close individual joint to its limit. We then get a list of 2xn scaling factor that range from 0 to 1.
         The factor will always be 1 unless a joint get into soft limit, thus lead to the general
         factor that applied entirely to set of joint velocity
+
+        Args:
+            qdot (list): Joint velocities
+
+        Returns:
+            list: Joint velocities with joint limit avoidance mechanism applied
         """
-        x = 1
-        qdot_damped = qdot * x
+        joint_limits_damper, max_weights = self._virtual_robot.joint_limits_damper(
+            qdot, steepness)
+        if max_weights > 0.75:
+            rospy.logwarn(
+                f"Joint limit avoidance mechanism is applied with max weight: {max_weights}")
 
-        return qdot_damped
+        return joint_limits_damper
 
-    def get_drift_compensation(self) -> np.ndarray:
+    def task_drift_compensation(self, gain=5, taskspace_compensation=True):
         r"""
-        Get the drift compensation for the robot
-        :return: drift compensation velocities as joint velocities
+        Task drift compensation mechanism that calculate the drift vector between two end-effectors
+        and then apply the RMRC to the drift vector to get the joint velocity that will be applied to the robot
+
+        Args:
+            gain (int, optional): Gain of the RMRC. Defaults to 5.
+            taskspace_compensation (bool, optional): Flag to indicate if the compensation is in task space. Defaults to True.
+
+        Returns:
+            list: Joint velocities with task drift compensation mechanism applied
         """
-        v, _ = rtb.p_servo(self._virtual_robot.get_tool_pose(side=self.left_arm.get_arm_name(), offset=True),
-                           self._virtual_robot.get_tool_pose(
-                               side=self.right_arm.get_arm_name(), offset=True),
-                           gain=1,
-                           threshold=0.001,
-                           method='angle-axis')
 
-        # get fix velocities for the drift for both linear and angular velocities
-        qdot_fix_left = CalcFuncs.rmrc(self.get_jacobian(
-            self.left_arm.get_arm_name()), v, w_thresh=0.05)
-        qdot_fix_right = CalcFuncs.rmrc(self.get_jacobian(
-            self.right_arm.get_arm_name()), -v, w_thresh=0.05)
-
-        return np.r_[qdot_fix_left, qdot_fix_right]
-
-    def tesk_drift_compensation(self, taskspace_compensation=True):
-
-        v, _ = rtb.p_servo(self._virtual_robot.get_tool_pose(side=self.left_arm.get_arm_name(), offset=True),
-                           self._virtual_robot.get_tool_pose(
-                               side=self.right_arm.get_arm_name(), offset=True),
-                           gain=6,
-                           threshold=0.001,
-                           method='angle-axis')
-
-        if taskspace_compensation:
-            return v
-        else:
-            qdot_fix_left = CalcFuncs.rmrc(self.get_jacobian(
-                self.left_arm.get_arm_name()), v, w_thresh=0.05)
-            qdot_fix_right = CalcFuncs.rmrc(self.get_jacobian(
-                self.right_arm.get_arm_name()), -v, w_thresh=0.05)
-
-            return np.r_[qdot_fix_left, qdot_fix_right]
+        return self._virtual_robot.task_drift_compensation(gain, taskspace_compensation)
 
     @ staticmethod
     def __call_service(service_name: str, service_type: str, **kwargs):
@@ -419,7 +385,8 @@ class PR2Controller:
         if q is not None:
             traj_point.positions = q
         else:
-            traj_point.positions = reorder_values(joint_states) + qdot * dt
+            traj_point.positions = CalcFuncs.reorder_values(
+                joint_states) + qdot * dt
             traj_point.velocities = qdot
 
         traj_point.time_from_start = rospy.Duration(dt)
@@ -505,6 +472,24 @@ class PR2Controller:
 
         self.constraint_distance = distance
 
+    def store_joint_velocities_for_PID_tuner(self, side: str, qdot: list):
+        r"""
+        Store the joint velocities in the buffer for PID tunner function
+
+        Args:
+            side (str): Side of the robot.
+            qdot (list): List of joint velocities.
+        """
+
+        self._qdot_record_PID[side]['desired'].append(qdot)
+
+        if side == 'left':
+            self._qdot_record_PID[side]['actual'].append(
+                CalcFuncs.reorder_values(self._joint_states.velocity[31:38]))
+        else:
+            self._qdot_record_PID[side]['actual'].append(
+                CalcFuncs.reorder_values(self._joint_states.velocity[17:24]))
+
     def store_joint_velocities(self, side: str, qdot: list):
         r"""
         Store the joint velocities in the buffer
@@ -514,11 +499,19 @@ class PR2Controller:
             qdot (list): List of joint velocities.
         """
 
-        self._qdot_record[side]['desired'].append(qdot)
+        self._qdot_record[side].append(qdot)
 
-        if side == 'left':
-            self._qdot_record[side]['actual'].append(
-                reorder_values(self._joint_states.velocity[31:38]))
-        else:
-            self._qdot_record[side]['actual'].append(
-                reorder_values(self._joint_states.velocity[17:24]))
+    def store_joint_positions(self):
+        r"""
+        Store the joint positions in the buffer
+
+        Args:
+            side (str): Side of the robot.
+            q (list): List of joint positions.
+        """
+        self._q_record[0].append(CalcFuncs.reorder_values(
+            self._joint_states.position[31:38]))
+        self._q_record[1].append(CalcFuncs.reorder_values(
+            self._joint_states.position[17:24]))
+
+        # self._q_record[side].append(self._virtual_robot.get_joint_positions(side))

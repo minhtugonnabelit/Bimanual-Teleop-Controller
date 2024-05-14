@@ -1,7 +1,8 @@
 
 import rospy
 from std_msgs.msg import Float64MultiArray
-
+from pr2_controllers_msgs.msg import Pr2GripperCommand, JointControllerState
+from copy import deepcopy
 
 class ArmController:
     r"""
@@ -25,8 +26,10 @@ class ArmController:
         self.joint_controller_pub = rospy.Publisher(
             self.joint_controller_name, controller_cmd_type, queue_size=10)
         self.gripper_controller_pub = rospy.Publisher(
-            "/" + arm + '_gripper_controller/command', gripper_cmd_type, queue_size=10) if enable_gripper else None
-
+            "/" + arm + '_gripper_controller/command', Pr2GripperCommand, queue_size=1) 
+        
+        self._state = None
+        self.gripper_state_sub = rospy.Subscriber("/" + arm + '_gripper_controller/state', JointControllerState, self.gripper_state_callback)
 
     def get_arm_name(self):
         return self.name
@@ -36,7 +39,6 @@ class ArmController:
     
     def get_joint_controller_name(self):
         return self.joint_controller_name
-    
 
     def send_joint_command(self, joint_command):
         joint_command_msg = Float64MultiArray()
@@ -50,9 +52,10 @@ class ArmController:
         :return: None
         """
 
-        msg = self.gripper_cmd_type()
-        msg.position = 0.08
-        msg.max_effort = 10.0
+        msg = Pr2GripperCommand()
+        msg.position = deepcopy(self._state) + 0.005
+        msg.max_effort = 50.0
+        rospy.loginfo("Opening Gripper")
         self.gripper_controller_pub.publish(msg)
 
     def close_gripper(self):
@@ -62,7 +65,12 @@ class ArmController:
         :return: None
         """
 
-        msg = self.gripper_cmd_type()
-        msg.position = 0.0
-        msg.max_effort = 10.0
+        msg = Pr2GripperCommand()
+        msg.position = deepcopy(self._state) - 0.005
+        msg.max_effort = 50.0
+        rospy.loginfo("Closing Gripper")
         self.gripper_controller_pub.publish(msg)
+
+    def gripper_state_callback(self, data : JointControllerState):
+
+        self._state = data.process_value
