@@ -163,7 +163,6 @@ catkin_install_python(PROGRAMS
   # scripts/hydra_reader.py
   # scripts/pr2_gazebo_test.py
   # src/bimanual_controller/utility.py
-  src/bimanual_controller/fakePR2.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

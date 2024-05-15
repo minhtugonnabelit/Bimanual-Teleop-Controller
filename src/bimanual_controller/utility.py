@@ -3,7 +3,7 @@ import spatialmath as sm
 import spatialmath.base as smb
 import spatialgeometry as geometry
 import roboticstoolbox as rtb
-from scipy import linalg, optimize
+from scipy import linalg
 from swift import Swift
 import threading
 
@@ -13,11 +13,17 @@ import pygame
 import sys
 import matplotlib.pyplot as plt
 
+import rospy
+
 CONTROL_RATE = 20
+# SAMPLE_STATES = {
+#     'l': [np.pi/4, np.pi/6, np.pi/2, -np.pi/2, np.pi/6, -np.pi/4, np.pi/2],
+#     'r': [-np.pi/4, np.pi/6, -np.pi/2, -np.pi/2, -np.pi/6, -np.pi/4, np.pi/2]
+# }
+
 SAMPLE_STATES = {
-    'left': [np.pi/4, np.pi/6, np.pi/2, -np.pi/2, np.pi/6, -np.pi/4, np.pi/2],
-    'right': [-np.pi/4, np.pi/6, -np.pi/2, -np.pi/2, -np.pi/6, -np.pi/4, np.pi/2]
-}
+    'r': np.deg2rad([-40, 30, -90, -91, -31, -39, 91]),
+    'l': np.deg2rad([39, 30, 90, -91, 31, -37, 85])}
 
 JOINT_NAMES = {
     "left": [
@@ -41,7 +47,7 @@ JOINT_NAMES = {
 }
 
 
-class CalcFuncs():
+class CalcFuncs:
     r"""
     Class to calculate the necessary functions for the robot control.
     """
@@ -228,7 +234,7 @@ class CalcFuncs():
         return data_array.tolist()
 
 
-class AnimateFuncs():
+class AnimateFuncs:
     r"""
     
     """
@@ -282,258 +288,6 @@ class AnimateFuncs():
         return AnimateFuncs.add_frame_to_plot(ax, tf)
 
 
-def joy_init():
-    r"""
-    Initialize the pygame library and joystick.
-
-    Returns:
-    - The joystick object.
-
-    """
-
-    pygame.init()
-    joystick_count = pygame.joystick.get_count()
-    if joystick_count == 0:
-        raise Exception('No joystick found')
-    else:
-        joystick = pygame.joystick.Joystick(0)
-        joystick.init()
-
-    return joystick
-
-def joy_to_twist(joy, gain):
-    r"""
-
-    Convert the joystick data to a twist message using Pygame module.
-
-    Parameters:
-    - joy: The joystick object.
-    - gain: The gain of the linear and angular velocities.
-
-    Returns:
-    - The twist message.
-
-    """
-    vx, vy, vz, r, p, y = 0, 0, 0, 0, 0, 0
-    done = False
-
-    if isinstance(joy, pygame.joystick.JoystickType):
-
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-        if joy.get_button(0):
-            print("Button 0 is pressed")
-            done = True
-
-        vz = (lpf(joy.get_axis(2) + 1,))/2 - (lpf(joy.get_axis(5) + 1,))/2
-        y = joy.get_button(1)*0.1 - joy.get_button(3)*0.1
-
-        # Low pass filter
-        vy = lpf(joy.get_axis(1))  # if abs(joy.get_axis(0)) > 0.1 else 0
-        vx = lpf(joy.get_axis(1))  # if abs(joy.get_axis(1)) > 0.1 else 0
-        r = lpf(joy.get_axis(3))  # if abs(joy.get_axis(3)) > 0.2 else 0
-        p = lpf(joy.get_axis(4))  # if abs(joy.get_axis(4)) > 0.2 else 0
-
-    else:
-
-        if joy[1][-3]:
-            done = True
-
-        vz = ((lpf(joy[0][5] + 1)) - (lpf(joy[0][2] + 1)))/2
-        y = joy[1][1] * 0.5 - joy[1][3] * 0.5
-
-        # Low pass filter
-        vy = lpf(joy[0][0])
-        vx = lpf(joy[0][1])
-        r = lpf(joy[0][3])
-        p = lpf(joy[0][4])
-
-    # ---------------------------------------------------------------------------#
-    twist = np.zeros(6)
-    twist[:3] = np.array([vx, vy, vz]) * gain[0]
-    twist[3:] = np.array([r, p, y]) * gain[1]
-
-    return twist, done
-
-def lpf(value, threshold=0.2):
-    r"""
-    Low pass filter for the joystick data.
-    """
-
-    return value if abs(value) > threshold else 0
-
-def map_interval(x):
-    return 0.03 * (x + 1)
-
-def plot_joint_velocities(actual_data: np.ndarray, desired_data: np.ndarray, dt=0.001, title='Joint Velocities'):
-
-    actual_data = np.array(actual_data)
-    desired_data = np.array(desired_data)
-    # distance_data = np.array(distance_data)
-
-    # Adjusted figsize for better visibility
-    fig, ax = plt.subplots(2, 4, figsize=(18, 10))
-
-    # Prepare data
-    time_space = np.linspace(0, len(actual_data) * dt, len(actual_data))
-
-    # Plot settings
-    colors = ['r', 'b']  # Red for actual, Blue for desired
-    labels = ['Actual', 'Desired']
-    data_types = [actual_data, desired_data]
-
-    for i in range(7):  # Assuming there are 7 joints
-        joint_axes = ax[i // 4, i % 4]
-        for data, color, label in zip(data_types, colors, labels):
-            joint_data = data[:, i]
-            if joint_data.shape[0] != len(time_space):
-                time_space = np.linspace(
-                    0, len(joint_data) * dt, len(joint_data))
-            joint_axes.plot(time_space, joint_data, color,
-                            linewidth=1, label=label if i == 0 else "")
-
-            # Max and Min annotations
-            max_value = np.max(joint_data)
-            min_value = np.min(joint_data)
-            max_time = time_space[np.argmax(joint_data)]
-            min_time = time_space[np.argmin(joint_data)]
-
-            joint_axes.annotate(f'Max: {max_value:.2f}', xy=(max_time, max_value), xytext=(10, 0),
-                                textcoords='offset points', ha='center', va='bottom', color=color)
-            joint_axes.annotate(f'Min: {min_value:.2f}', xy=(min_time, min_value), xytext=(10, -10),
-                                textcoords='offset points', ha='center', va='top', color=color)
-
-        joint_axes.set_title(JOINT_NAMES[title][i])
-
-    fig.legend(['Actual', 'Desired'], loc='upper right')
-    fig.suptitle(title)
-
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.show()
-
-    return fig, ax
-
-def plot_manip_and_drift(constraint_distance: float, 
-                         manipulabity_threshold: float, 
-                         joint_limits : np.ndarray, 
-                         joint_positions : np.ndarray ,
-                         joint_velocities: np.ndarray, 
-                         drift: np.ndarray, 
-                         manip: np.ndarray, 
-                         dt=0.001):
-    r"""
-    Plot the manipulability and drift data for the PR2 robot.
-
-    Parameters:
-    - constraint_distance: The constraint distance data.
-    - drift: The drift data.
-    - manip_l: The manipulability data for the left arm.
-    - manip_r: The manipulability data for the right arm.
-    - dt: The time interval.
-
-    Returns:
-    - The figure and axes objects.
-    """
-
-    # Prepare data
-    fig, ax = plt.subplots(3, 2, figsize=(18, 8))
-    time_space = np.linspace(0, len(drift) * dt, len(drift))
-    manip_axes = ax[0, 0]
-    drift_axes = ax[0, 1]
-    manip_l = manip[0]
-    manip_r = manip[1]    
-    joint_pos_axes = ax[1, :]
-    joint_vel_axes = ax[2, :]
-
-    joint_limits = {
-        'left': [joint_limits[0][:7], joint_limits[1][:7]],
-        'right': [joint_limits[0][7:], joint_limits[1][7:]]
-    }
-
-    # Plot joint positions
-
-    if len(joint_positions[0]) != len(time_space):
-        time_space = np.linspace(0, len(joint_positions['l'])
-                                 * dt, len(joint_positions['l']) + 1)
-
-    for i, side in enumerate(['left', 'right']):
-        for j in range(7):  # Assuming there are 7 joints
-            joint_data = np.array([d[j] for d in joint_positions[i]])
-            joint_pos_axes[i].plot(time_space, joint_data, label=f'Joint {j+1}')
-            joint_pos_axes[i].axhline(y=joint_limits[side][0][j], color='r', linestyle='--')  # Lower limit
-            joint_pos_axes[i].axhline(y=joint_limits[side][1][j], color='g', linestyle='--')  # Upper limit
-        joint_pos_axes[i].set_title(f'{side.capitalize()} Arm Joint Positions')
-        joint_pos_axes[i].legend()
-
-    # Plot joint velocities
-    for i, side in enumerate(['left', 'right']):
-        for j in range(7):  # Assuming there are 7 joints
-            joint_data = np.array([d[j] for d in joint_velocities[side]])
-            joint_vel_axes[i].plot(time_space, joint_data, label=f'Joint {j+1}')
-        joint_vel_axes[i].set_title(f'{side.capitalize()} Arm Joint Velocities')
-        joint_vel_axes[i].legend()
-
-    # Plot manipulability data    # Plot drift data
-    if len(manip_r) != len(time_space):
-        time_space = np.linspace(0, len(manip_r)
-                                 * dt, len(manip_r) + 1)
-
-    if len(manip_l) != len(time_space):
-        time_space = np.linspace(0, len(manip_l)
-                                 * dt, len(manip_l) + 1)
-
-    manip_axes.plot(time_space, manip_l, 'r', linewidth=1)
-    manip_axes.plot(time_space, manip_r, 'b', linewidth=1)
-    manip_axes.set_title('Manipulability graph')
-    manip_axes.set_xlabel('Time')
-    manip_axes.set_ylabel('Manipulability')
-    manip_axes.legend(['Left arm', 'Right arm'])
-    manip_axes.axhline(y=manipulabity_threshold, color='k',
-                       linewidth=1, linestyle='--')
-
-    manip_axes.annotate(f'Min Left {np.min(manip_l):.4f}',
-                        xy=(time_space[np.argmin(manip_l)], np.min(manip_l)),
-                        xytext=(10, 0), textcoords='offset points',
-                        ha='center', va='bottom', color='r')
-
-    manip_axes.annotate(f'Min Right {np.min(manip_r):.4f}',
-                        xy=(time_space[np.argmin(manip_r)], np.min(manip_r)),
-                        xytext=(10, -10), textcoords='offset points',
-                        ha='center', va='top', color='b')
-
-    # Plot drift data
-    if len(drift) != len(time_space):
-        time_space = np.linspace(0, len(drift)
-                                 * dt, len(drift) + 1)
-
-    drift_axes.plot(time_space, drift, 'k', linewidth=1)
-    drift_axes.set_title('Drift graph')
-    drift_axes.set_xlabel('Time')
-    drift_axes.set_ylabel('Distance')
-    drift_axes.set_ylim([constraint_distance - 0.2, constraint_distance + 0.2])
-    drift_axes.axhline(y=constraint_distance, color='r', linewidth=1)
-
-    drift_axes.annotate(f'Constraint {constraint_distance:.4f}',
-                        xy=(time_space[time_space.size//2], 0.35),
-                        xytext=(10, 0),
-                        textcoords='offset points',
-                        ha='center', va='bottom', color='r')
-
-    drift_axes.annotate(f'Max {np.max(drift):.4f}',
-                        xy=(time_space[np.argmax(drift)], np.max(drift)),
-                        xytext=(10, 0), textcoords='offset points',
-                        ha='center', va='bottom', color='k')
-
-    drift_axes.annotate(f'Min {np.min(drift):.4f}',
-                        xy=(time_space[np.argmin(drift)], np.min(drift)),
-                        xytext=(10, -10), textcoords='offset points',
-                        ha='center', va='top', color='k')
-
-    return fig, ax
-
-
 class FakePR2:
 
     r"""
@@ -563,12 +317,21 @@ class FakePR2:
             }
         }
 
+
         # Get the joint limits and form the symmetric soft limits
         qmin, qmax = self.get_joint_limits_all()
         self.qmid = (qmin + qmax) / 2
-        self.soft_limit_start = ((qmax - qmin)/2) * 0.75
+
+        # Normal joint with soft limits start at 80% and end at 90% of the joint limits
+        self.soft_limit_start = ((qmax - qmin)/2) * 0.8
         self.soft_limit_end = ((qmax - qmin)/2) * 0.9
+
+        # Except for the shoulder lift joints of both arms
+        self.soft_limit_start[1] = ((qmax[1] - qmin[1])/2) * 0.75
+        self.soft_limit_start[8] = deepcopy(self.soft_limit_start[1])
+
         self.soft_limit_range = (self.soft_limit_end - self.soft_limit_start)
+
 
         if self._launch_visualizer:
             self._env = Swift()
@@ -695,7 +458,7 @@ class FakePR2:
 
         return self._robot.jacobe(self._robot.q, end=self._arms_frame[side]['end'], start=self._arms_frame[side]['start'], tool=self._tool_offset[side])
 
-    def joint_limits_damper(self, qdot, steepness=10):
+    def joint_limits_damper(self, qdot, dt, steepness=10):
         r"""
         Repulsive potential field for joint limits for both arms
         :param qdot: joint velocities
@@ -704,8 +467,8 @@ class FakePR2:
         """
         # Get the joint positions for next step
         q = np.r_[self.get_joint_positions(
-            'l'), self.get_joint_positions('r')] + qdot / CONTROL_RATE
-
+            'l'), self.get_joint_positions('r')] + qdot * dt
+        
         x = np.zeros(qdot.shape[0])
         for i in range(len(x)):
             qi, qm, qsls, qsle, qslr = q[i], self.qmid[i],  self.soft_limit_start[i], self.soft_limit_end[i], self.soft_limit_range[i]
@@ -750,3 +513,252 @@ class FakePR2:
             self._is_collapsed = True
             self._thread.join()
         return True
+
+class ROSUtils:
+
+    @staticmethod
+    def call_service(service_name, service_type, **kwargs):
+        r"""
+        Call a service in ROS
+        :param service_name: name of the service
+        :param service_type: type of the service
+        :param request: request to the service
+        :return: response from the service
+        """
+        rospy.wait_for_service(service_name)
+        try:
+            service = rospy.ServiceProxy(service_name, service_type)
+            response = service(**kwargs)
+            return response
+        except rospy.ServiceException as e:
+            print("Service call failed: %s" % e)
+            return None
+
+def joy_init():
+    pygame.init()
+    joystick_count = pygame.joystick.get_count()
+    if joystick_count == 0:
+        raise Exception('No joystick found')
+    else:
+        joystick = pygame.joystick.Joystick(0)
+        joystick.init()
+
+    return joystick
+
+def joy_to_twist(joy, gain):
+    vx, vy, vz, r, p, y = 0, 0, 0, 0, 0, 0
+    done = False
+
+    if isinstance(joy, pygame.joystick.JoystickType):
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+        if joy.get_button(0):
+            print("Button 0 is pressed")
+            done = True
+
+        vz = (lpf(joy.get_axis(2) + 1,))/2 - (lpf(joy.get_axis(5) + 1,))/2
+        y = joy.get_button(1)*0.1 - joy.get_button(3)*0.1
+
+        # Low pass filter
+        vy = lpf(joy.get_axis(1)) 
+        vx = lpf(joy.get_axis(1)) 
+        r = lpf(joy.get_axis(3))  
+        p = lpf(joy.get_axis(4)) 
+
+    else:
+
+        if joy[1][-3]:
+            done = True
+
+        vz = ((lpf(joy[0][5] + 1)) - (lpf(joy[0][2] + 1)))/2
+        y = joy[1][1] * 0.5 - joy[1][3] * 0.5
+
+        # Low pass filter
+        vy = lpf(joy[0][0])
+        vx = lpf(joy[0][1])
+        r = lpf(joy[0][3])
+        p = lpf(joy[0][4])
+
+    # ---------------------------------------------------------------------------#
+    twist = np.zeros(6)
+    twist[:3] = np.array([vx, vy, vz]) * gain[0]
+    twist[3:] = np.array([r, p, y]) * gain[1]
+    return twist, done
+
+def lpf(value, threshold=0.2):
+    r"""
+    Low pass filter for the joystick data.
+    """
+
+    return value if abs(value) > threshold else 0
+
+def map_interval(x):
+    return 0.03 * (x + 1)
+
+def plot_joint_velocities(actual_data: np.ndarray, desired_data: np.ndarray, dt=0.001, title='Joint Velocities'):
+
+    actual_data = np.array(actual_data)
+    desired_data = np.array(desired_data)
+
+    # Adjusted figsize for better visibility
+    fig, ax = plt.subplots(2, 4, figsize=(18, 10))
+
+    # Prepare data
+    time_space = np.linspace(0, len(actual_data) * dt, len(actual_data))
+
+    # Plot settings
+    colors = ['r', 'b']  # Red for actual, Blue for desired
+    labels = ['Actual', 'Desired']
+    data_types = [actual_data, desired_data]
+
+    for i in range(7):  # Assuming there are 7 joints
+        joint_axes = ax[i // 4, i % 4]
+        for data, color, label in zip(data_types, colors, labels):
+            joint_data = data[:, i]
+            if joint_data.shape[0] != len(time_space):
+                time_space = np.linspace(
+                    0, len(joint_data) * dt, len(joint_data))
+            joint_axes.plot(time_space, joint_data, color,
+                            linewidth=1, label=label if i == 0 else "")
+
+            # Max and Min annotations
+            max_value = np.max(joint_data)
+            min_value = np.min(joint_data)
+            max_time = time_space[np.argmax(joint_data)]
+            min_time = time_space[np.argmin(joint_data)]
+
+            joint_axes.annotate(f'Max: {max_value:.2f}', xy=(max_time, max_value), xytext=(10, 0),
+                                textcoords='offset points', ha='center', va='bottom', color=color)
+            joint_axes.annotate(f'Min: {min_value:.2f}', xy=(min_time, min_value), xytext=(10, -10),
+                                textcoords='offset points', ha='center', va='top', color=color)
+
+        joint_axes.set_title(JOINT_NAMES[title][i])
+
+    fig.legend(['Actual', 'Desired'], loc='upper right')
+    fig.suptitle(title)
+
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+
+    return fig, ax
+
+def plot_manip_and_drift(constraint_distance: float, 
+                         manipulabity_threshold: float, 
+                         joint_limits : np.ndarray, 
+                         joint_positions : np.ndarray ,
+                         joint_velocities: np.ndarray, 
+                         drift: np.ndarray, 
+                         manip: np.ndarray, 
+                         dt=0.001):
+    r"""
+    Plot the manipulability and drift data for the PR2 robot.
+
+    Parameters:
+    - constraint_distance: The constraint distance data.
+    - drift: The drift data.
+    - manip_l: The manipulability data for the left arm.
+    - manip_r: The manipulability data for the right arm.
+    - dt: The time interval.
+
+    Returns:
+    - The figure and axes objects.
+    """
+
+    # Prepare data
+    fig, ax = plt.subplots(3, 2, figsize=(18, 8))
+    time_space = np.linspace(0, len(drift) * dt, len(drift))
+    manip_axes = ax[0, 0]
+    drift_axes = ax[0, 1]
+    manip_l = manip[0]
+    manip_r = manip[1]    
+    joint_pos_axes = ax[1, :]
+    joint_vel_axes = ax[2, :]
+
+    joint_limits = {
+        'left': [joint_limits[0][:7], joint_limits[1][:7]],
+        'right': [joint_limits[0][7:], joint_limits[1][7:]]
+    }
+
+    # Plot joint positions
+
+    if len(joint_positions[0]) != len(time_space):
+        time_space = np.linspace(0, len(joint_positions['l'])
+                                 * dt, len(joint_positions['l']) + 1)
+
+    for i, side in enumerate(['left', 'right']):
+        for j in range(7):  # Assuming there are 7 joints
+            joint_data = np.array([d[j] for d in joint_positions[i]])
+            joint_pos_axes[i].plot(time_space, joint_data, label=f'Joint {j+1}')
+            joint_pos_axes[i].axhline(y=joint_limits[side][0][j], color='r', linestyle='--')  # Lower limit
+            joint_pos_axes[i].axhline(y=joint_limits[side][1][j], color='g', linestyle='--')  # Upper limit
+        joint_pos_axes[i].set_title(f'{side.capitalize()} Arm Joint Positions')
+        joint_pos_axes[i].legend()
+
+    # Plot joint velocities
+    for i, side in enumerate(['left', 'right']):
+        for j in range(7):  # Assuming there are 7 joints
+            joint_data = np.array([d[j] for d in joint_velocities[side]])
+            joint_vel_axes[i].plot(time_space, joint_data, label=f'Joint {j+1}')
+        joint_vel_axes[i].set_title(f'{side.capitalize()} Arm Joint Velocities')
+        joint_vel_axes[i].legend()
+
+    # Plot manipulability data    # Plot drift data
+    if len(manip_r) != len(time_space):
+        time_space = np.linspace(0, len(manip_r)
+                                 * dt, len(manip_r) + 1)
+
+    if len(manip_l) != len(time_space):
+        time_space = np.linspace(0, len(manip_l)
+                                 * dt, len(manip_l) + 1)
+
+    manip_axes.plot(time_space, manip_l, 'r', linewidth=1)
+    manip_axes.plot(time_space, manip_r, 'b', linewidth=1)
+    manip_axes.set_title('Manipulability graph')
+    manip_axes.set_xlabel('Time')
+    manip_axes.set_ylabel('Manipulability')
+    manip_axes.legend(['Left arm', 'Right arm'])
+    manip_axes.axhline(y=manipulabity_threshold, color='k',
+                       linewidth=1, linestyle='--')
+
+    manip_axes.annotate(f'Min Left {np.min(manip_l):.4f}',
+                        xy=(time_space[np.argmin(manip_l)], np.min(manip_l)),
+                        xytext=(10, 0), textcoords='offset points',
+                        ha='center', va='bottom', color='r')
+
+    manip_axes.annotate(f'Min Right {np.min(manip_r):.4f}',
+                        xy=(time_space[np.argmin(manip_r)], np.min(manip_r)),
+                        xytext=(10, -10), textcoords='offset points',
+                        ha='center', va='top', color='b')
+
+    # Plot drift data
+    if len(drift) != len(time_space):
+        time_space = np.linspace(0, len(drift)
+                                 * dt, len(drift) + 1)
+
+    drift_axes.plot(time_space, drift, 'k', linewidth=1)
+    drift_axes.set_title('Drift graph')
+    drift_axes.set_xlabel('Time')
+    drift_axes.set_ylabel('Distance')
+    drift_axes.set_ylim([constraint_distance - 0.2, constraint_distance + 0.2])
+    drift_axes.axhline(y=constraint_distance, color='r', linewidth=1)
+
+    drift_axes.annotate(f'Constraint {constraint_distance:.4f}',
+                        xy=(time_space[time_space.size//2], 0.35),
+                        xytext=(10, 0),
+                        textcoords='offset points',
+                        ha='center', va='bottom', color='r')
+
+    drift_axes.annotate(f'Max {np.max(drift):.4f}',
+                        xy=(time_space[np.argmax(drift)], np.max(drift)),
+                        xytext=(10, 0), textcoords='offset points',
+                        ha='center', va='bottom', color='k')
+
+    drift_axes.annotate(f'Min {np.min(drift):.4f}',
+                        xy=(time_space[np.argmin(drift)], np.min(drift)),
+                        xytext=(10, -10), textcoords='offset points',
+                        ha='center', va='top', color='k')
+
+    return fig, ax
+
