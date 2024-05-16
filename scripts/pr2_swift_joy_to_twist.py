@@ -33,6 +33,7 @@ right_ax = geometry.Axes(length=0.05, pose=right_tip_pose)
 # Extract the middle point between the two tools
 joined = np.eye(4, 4)
 joined[0:3, 3] = (left_tip_pose[0:3, 3] + right_tip_pose[0:3, 3]) / 2
+joined[0:3, 0:3] = smb.rotz(np.pi)
 joined_ax = geometry.Axes(length=0.05, pose=joined,)
 joined_in_left = linalg.inv(sm.SE3(left_tip_pose)) @ joined
 joined_in_right = linalg.inv(sm.SE3(right_tip_pose)) @ joined
@@ -70,7 +71,7 @@ def get_drift_compensation() -> np.ndarray:
 w_l = list()
 w_r = list()
 df = list()
-dt = 1/CONTROL_RATE
+dt = 1/50
 
 joy = joy_init()
 LIN_G = 0.02
@@ -126,7 +127,7 @@ while not done:
         pr2.fkine(pr2.q, end=pr2.grippers[0], ).A[0:3, 3])
     df.append(dis)
 
-    env.step(1/CONTROL_RATE)
+    env.step(1/50)
 
 
 # Record and plot the distance between offset frames of each arm to  observe the drift of tracked frame

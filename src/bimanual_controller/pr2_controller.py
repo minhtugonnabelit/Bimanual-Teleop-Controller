@@ -7,11 +7,10 @@
 # It also provides functions to move the robot to a neutral position, open and close the grippers, and send joint velocities to the robot.
 
 import rospy
-import tf
-from tf import TransformerROS as tfROS
 
 from std_msgs.msg import Float64MultiArray
 from sensor_msgs.msg import JointState, Joy
+from geometry_msgs.msg import Twist
 from pr2_mechanism_msgs.srv import SwitchController, UnloadController
 from pr2_controllers_msgs.msg import Pr2GripperCommand
 
@@ -21,39 +20,36 @@ from bimanual_controller.arm_controller import ArmController
 
 
 class PR2Controller:
-    r"""
-    Class to control the PR2 robot
-    """
 
     def __init__(self, name, log_level, rate):
 
-        # Initialize the robot model to handle constraints and calculate Jacobians
         rospy.init_node(name, log_level=log_level, anonymous=True)
-        self._virtual_robot = FakePR2(launch_visualizer=False)
+        self._virtual_robot = FakePR2(control_rate=rate,launch_visualizer=False)
         self._rate = rospy.Rate(rate)
         self._dt = 1/rate
         self._robot_base_frame = 'base_footprint'
-        self.right_arm = ArmController(arm='r',
+        self._right_arm = ArmController(arm='r',
                                        arm_group_joint_names=JOINT_NAMES['right'],
                                        arm_group_controller_name="/r_arm_joint_group_velocity_controller",
                                        controller_cmd_type=Float64MultiArray,
                                        gripper_cmd_type=Pr2GripperCommand,
                                        robot_base_frame=self._robot_base_frame)
 
-        self.left_arm = ArmController(arm='l',
+        self._left_arm = ArmController(arm='l',
                                       arm_group_joint_names=JOINT_NAMES['left'],
                                       arm_group_controller_name="/l_arm_joint_group_velocity_controller",
                                       controller_cmd_type=Float64MultiArray,
                                       gripper_cmd_type=Pr2GripperCommand,
                                       robot_base_frame=self._robot_base_frame)
 
-        # Initialize the joint states subscriber
+        self._base_controller_pub = rospy.Publisher(
+            '/base_controller/command', Twist, queue_size=10)
+        
         self._joint_states = None
         self._joint_state_sub = rospy.Subscriber(
             '/joint_states', JointState, self.__joint_state_callback)
 
-        # Initialize the joystick subscriber
-        self._joy_msg = None
+        self._joy_msg = rospy.wait_for_message('/joy', Joy)
         self._joy_pygame = joy_init()
         self._rumbled = False
         self._joystick_sub = rospy.Subscriber(
@@ -73,7 +69,6 @@ class PR2Controller:
         #     'r': 'hydra_right_grab'
         # }
 
-        # Initialize the buffer for the joint velocities recording
         self._constraint_distance = 0
         self._constraint_is_set = False
         self._offset_distance = []
@@ -94,6 +89,8 @@ class PR2Controller:
     def __clean(self):
         self._virtual_robot.shutdown()
         rospy.loginfo('Shutting down the virtual robot')
+        if self._rumbled:
+            self._joy_pygame.stop_rumble()
         PR2Controller.kill_jg_vel_controller()
         self.move_to_neutral()
 
@@ -114,9 +111,8 @@ class PR2Controller:
         self._rate.sleep()
 
     def set_kinematics_constraints(self):
-        
-        left_pose = self.left_arm.get_gripper_transform()
-        right_pose = self.right_arm.get_gripper_transform()
+        left_pose = self._left_arm.get_gripper_transform()
+        right_pose = self._right_arm.get_gripper_transform()
 
         virtual_pose = np.eye(4)
         virtual_pose[:3, -1] = (left_pose[:3, -1] + right_pose[:3, -1]) / 2
@@ -130,12 +126,19 @@ class PR2Controller:
         self._manip_thresh = manip_thresh
 
     def move_to_neutral(self):
-
-        result_r = self.right_arm.move_to_neutral()
-        result_l = self.left_arm.move_to_neutral()
+        result_r = self._right_arm.move_to_neutral()
+        result_l = self._left_arm.move_to_neutral()
         return result_l
 
-    # Callback functions
+    def move_base(self, twist):
+        twist_msg = Twist()
+        twist_msg.linear.x = twist[0]
+        twist_msg.linear.y = twist[1]
+        twist_msg.angular.z = twist[2]
+        twist_msg.angular.x = twist[3]
+        twist_msg.angular.y = twist[4]
+        twist_msg.angular.z = twist[5]
+        self._base_controller_pub.publish(twist_msg)
 
     def __joint_state_callback(self, msg: JointState):
         self._joint_states = msg
@@ -148,9 +151,6 @@ class PR2Controller:
     #     self._hydra_joy_msg[side] = (msg.axes, msg.buttons)
 
     # Getters
-
-    def get_joy_msg(self):
-        return self._joy_msg
 
     # def get_hydra_joy_msg(self, side: str):
     #     return self._hydra_joy_msg[side]
@@ -177,11 +177,20 @@ class PR2Controller:
 
     #     return xdot, synced
 
+    def get_joy_msg(self):
+        return self._joy_msg
+
+    def get_arm_controller(self, side: str):
+        return self._right_arm if side == 'r' else self._left_arm
+
     def get_joint_states(self):
         return self._joint_states
 
     def get_jacobian(self, side: str):
         return self._virtual_robot.get_jacobian(side)
+
+    def get_tool_pose(self, side: str, isOffset=True):
+        return self._virtual_robot.get_tool_pose(side, isOffset)
 
     def joint_limit_damper(self, qdot, steepness=10) -> list:
         r"""
@@ -196,8 +205,8 @@ class PR2Controller:
         joint_limits_damper, max_weights = self._virtual_robot.joint_limits_damper(
             qdot, self._dt, steepness)
 
-        if max_weights > 0.75:
-            rumble_freq = (max_weights - 0.75)*3
+        if max_weights > 0.8:
+            rumble_freq = (max_weights - 0.8)*3
             self._rumbled = self._joy_pygame.rumble(rumble_freq, 2*rumble_freq, 0)
             rospy.logwarn(
                 f"\nJoint limit avoidance mechanism is applied with max weight: {max_weights:.2f}")
@@ -222,7 +231,7 @@ class PR2Controller:
     
     @ staticmethod
     def start_jg_vel_controller():
-
+        rospy.loginfo('Loading and starting velocity controllers')
         switched = ROSUtils.call_service('pr2_controller_manager/switch_controller',
                                          SwitchController,
                                          start_controllers=[
@@ -237,9 +246,7 @@ class PR2Controller:
 
     @ staticmethod
     def kill_jg_vel_controller():
-        rospy.loginfo(
-            'Switching controllers and unloading velocity controllers')
-
+        rospy.loginfo('Switching controllers and unloading velocity controllers')
         switched = ROSUtils.call_service('pr2_controller_manager/switch_controller',
                                          SwitchController,
                                          start_controllers=[
@@ -267,14 +274,14 @@ class PR2Controller:
     def store_drift(self):
         self._offset_distance.append(
             np.linalg.norm(
-                self._virtual_robot.get_tool_pose(side=self.left_arm.get_arm_name(), offset=False)[:3, -1] -
-                self._virtual_robot.get_tool_pose(side=self.right_arm.get_arm_name(), offset=False)[:3, -1]))
+                self._virtual_robot.get_tool_pose(side=self._left_arm.get_arm_name(), offset=False)[:3, -1] -
+                self._virtual_robot.get_tool_pose(side=self._right_arm.get_arm_name(), offset=False)[:3, -1]))
 
     def store_manipulability(self):
         self._manipulability[0].append(CalcFuncs.manipulability(
-            self.get_jacobian(self.left_arm.get_arm_name())))
+            self.get_jacobian(self._left_arm.get_arm_name())))
         self._manipulability[1].append(CalcFuncs.manipulability(
-            self.get_jacobian(self.right_arm.get_arm_name())))
+            self.get_jacobian(self._right_arm.get_arm_name())))
 
     def store_joint_velocities(self, side: str, qdot: list):
         self._qdot_record[side].append(qdot)

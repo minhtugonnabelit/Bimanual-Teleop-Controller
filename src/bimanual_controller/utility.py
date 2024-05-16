@@ -10,12 +10,14 @@ import threading
 from copy import deepcopy
 import math
 import pygame
-import sys
+import sys, os
+import time
 import matplotlib.pyplot as plt
 
 import rospy
+from sensor_msgs.msg import JointState
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
-CONTROL_RATE = 20
 # SAMPLE_STATES = {
 #     'l': [np.pi/4, np.pi/6, np.pi/2, -np.pi/2, np.pi/6, -np.pi/4, np.pi/2],
 #     'r': [-np.pi/4, np.pi/6, -np.pi/2, -np.pi/2, -np.pi/6, -np.pi/4, np.pi/2]
@@ -98,14 +100,16 @@ class CalcFuncs:
         w = CalcFuncs.manipulability(jacob)
 
         # set threshold and damping
-        max_damp = 0.5
+        max_damp = 1
 
         # if manipulability is less than threshold, add damping
         damp = (1 - np.power(w/w_thresh, 2)) * max_damp if w < w_thresh else 0
+        if w < w_thresh:
+            print(f"Manipulability: {w:.2f} Damping: {damp:.2f}")
 
         # calculate damped least square
         j_dls = np.transpose(jacob) @ np.linalg.inv(jacob @
-                                                    np.transpose(jacob) + np.power(damp, 1) * np.eye(6))
+                                                    np.transpose(jacob) + np.power(damp, 2) * np.eye(6))
 
         # get joint velocities, if robot is in singularity, use damped least square
         qdot = j_dls @ np.transpose(twist)
@@ -232,6 +236,15 @@ class CalcFuncs:
             4] = data_array[1], data_array[2], data_array[0], data_array[4], data_array[3]
 
         return data_array.tolist()
+    
+    @staticmethod
+    def debounce(last_switch_time, debounce_interval=1):
+        current_time = time.time()
+        if current_time - last_switch_time >= debounce_interval:
+            last_switch_time = current_time
+            return True, last_switch_time
+        else:
+            return False, last_switch_time
 
 
 class AnimateFuncs:
@@ -296,8 +309,9 @@ class FakePR2:
     This will initialize the Swift environment with robot model without any ROS components. 
     This model will be fed with joint states provided and update the visualization of the virtual frame . """
 
-    def __init__(self, launch_visualizer) -> None:
+    def __init__(self, control_rate, launch_visualizer) -> None:
 
+        self._control_rate = control_rate
         self._launch_visualizer = launch_visualizer
         self._robot = rtb.models.PR2()
         self._is_collapsed = False
@@ -332,7 +346,6 @@ class FakePR2:
 
         self.soft_limit_range = (self.soft_limit_end - self.soft_limit_start)
 
-
         if self._launch_visualizer:
             self._env = Swift()
             self._env.launch()
@@ -363,7 +376,7 @@ class FakePR2:
         :return: None
         """
         while not self._is_collapsed:
-            self._env.step(1/CONTROL_RATE)
+            self._env.step(1/self._control_rate)
 
     def set_constraints(self, virtual_pose: np.ndarray):
         r"""
@@ -493,7 +506,7 @@ class FakePR2:
         v, _ = rtb.p_servo(self.get_tool_pose(side='l', offset=True),
                            self.get_tool_pose(side='r', offset=True),
                            gain=gain,
-                           threshold=0.001,
+                           threshold=0.005,
                            method='angle-axis')
 
         if taskspace_compensation:
@@ -533,6 +546,26 @@ class ROSUtils:
         except rospy.ServiceException as e:
             print("Service call failed: %s" % e)
             return None
+        
+    @ staticmethod
+    def _create_joint_traj_msg(joint_names: list, dt: float, traj_frame_id : str, joint_states: list = None, qdot: list = None, q: list = None):
+        joint_traj = JointTrajectory()
+        joint_traj.header.stamp = rospy.Time.now()
+        joint_traj.header.frame_id = traj_frame_id
+        joint_traj.joint_names = joint_names
+
+        traj_point = JointTrajectoryPoint()
+        if q is not None:
+            traj_point.positions = q
+        else:
+            traj_point.positions = CalcFuncs.reorder_values(
+                joint_states) + qdot * dt
+            traj_point.velocities = qdot
+
+        traj_point.time_from_start = rospy.Duration(dt)
+        joint_traj.points = [traj_point]
+
+        return joint_traj
 
 def joy_init():
     pygame.init()
@@ -545,9 +578,11 @@ def joy_init():
 
     return joystick
 
-def joy_to_twist(joy, gain):
+def joy_to_twist(joy, gain, base=False):
+
     vx, vy, vz, r, p, y = 0, 0, 0, 0, 0, 0
     done = False
+    agressive = 0
 
     if isinstance(joy, pygame.joystick.JoystickType):
 
@@ -570,29 +605,39 @@ def joy_to_twist(joy, gain):
 
     else:
 
-        if joy[1][-3]:
-            done = True
+        # if joy[1][-3]:
+        #     done = True
 
-        vz = ((lpf(joy[0][5] + 1)) - (lpf(joy[0][2] + 1)))/2
-        y = joy[1][1] * 0.5 - joy[1][3] * 0.5
+        # vz = ((lpf(joy[0][5] + 1)) - (lpf(joy[0][2] + 1)))/2
+        # y = joy[1][1] * 0.5 - joy[1][3] * 0.5
+
+        # # Low pass filter
+        # vy = lpf(joy[0][0])
+        # vx = lpf(joy[0][1])
+        # r = lpf(joy[0][3])
+        # p = lpf(joy[0][4])
+
+        trigger_side = 5 if not base else 2
+        agressive =  (-lpf(joy[0][trigger_side]) + 1)/2 
 
         # Low pass filter
-        vy = lpf(joy[0][0])
-        vx = lpf(joy[0][1])
-        r = lpf(joy[0][3])
-        p = lpf(joy[0][4])
+        vy = lpf(joy[0][0]) / np.abs(lpf(joy[0][0])) if lpf(joy[0][0]) != 0 else 0
+        vx = lpf(joy[0][1]) / np.abs(lpf(joy[0][1])) if lpf(joy[0][1]) != 0 else 0
+        y = joy[1][2] - joy[1][1] # button X and B
 
+        if not base:
+            vz = joy[1][3] - joy[1][0] # button Y and A
+            r = lpf(joy[0][3]) / np.abs(lpf(joy[0][3])) if lpf(joy[0][3]) != 0 else 0
+            p = lpf(joy[0][4]) / np.abs(lpf(joy[0][4])) if lpf(joy[0][4]) != 0 else 0
+
+        
     # ---------------------------------------------------------------------------#
     twist = np.zeros(6)
-    twist[:3] = np.array([vx, vy, vz]) * gain[0]
-    twist[3:] = np.array([r, p, y]) * gain[1]
+    twist[:3] = np.array([vx, vy, vz]) * gain[0] * agressive
+    twist[3:] = np.array([r, p, y]) * gain[1] * agressive
     return twist, done
 
-def lpf(value, threshold=0.2):
-    r"""
-    Low pass filter for the joystick data.
-    """
-
+def lpf(value, threshold=0.1):
     return value if abs(value) > threshold else 0
 
 def map_interval(x):
