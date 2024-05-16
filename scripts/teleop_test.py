@@ -262,7 +262,7 @@ class BMCP:
         elif - joy_msg[0][-1] == 1:  # down
             arm.close_gripper()
 
-    def world_twist_to_qdot(self, ee_pose, twist, side):
+    def world_twist_to_qdot(self, ee_pose : np.ndarray, twist : list, side) -> list:
         adjoint = CalcFuncs.adjoint(ee_pose)
         twist = adjoint @ twist
         jacob = self.controller.get_jacobian(side=side)

@@ -1,9 +1,11 @@
+from typing import Union
+
 import tf
 import rospy
 import actionlib
 from control_msgs.msg import FollowJointTrajectoryAction, FollowJointTrajectoryGoal
 from std_msgs.msg import Float64MultiArray
-from pr2_controllers_msgs.msg import  JointControllerState
+from pr2_controllers_msgs.msg import  JointControllerState, Pr2GripperCommand
 from copy import deepcopy
 
 from bimanual_controller.utility import *
@@ -18,8 +20,8 @@ class ArmController:
                  arm: str,
                  arm_group_joint_names: list,
                  arm_group_controller_name: str,
-                 controller_cmd_type,
-                 gripper_cmd_type,
+                 controller_cmd_type: Union[Float64MultiArray,],
+                 gripper_cmd_type : Union[Pr2GripperCommand,],
                  robot_base_frame: str = 'base_link'):
 
         self._name = arm
@@ -84,9 +86,8 @@ class ArmController:
         self._gripper_state = data.process_value
 
     def move_to_neutral(self):
-
         goal = FollowJointTrajectoryGoal()
-        goal.trajectory = ROSUtils._create_joint_traj_msg(
+        goal.trajectory = ROSUtils.create_joint_traj_msg(
             self._joint_names,
             3,
             self._robot_base_frame,

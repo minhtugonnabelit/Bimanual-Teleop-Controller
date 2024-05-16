@@ -18,11 +18,6 @@ import rospy
 from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
-# SAMPLE_STATES = {
-#     'l': [np.pi/4, np.pi/6, np.pi/2, -np.pi/2, np.pi/6, -np.pi/4, np.pi/2],
-#     'r': [-np.pi/4, np.pi/6, -np.pi/2, -np.pi/2, -np.pi/6, -np.pi/4, np.pi/2]
-# }
-
 SAMPLE_STATES = {
     'r': np.deg2rad([-40, 30, -90, -91, -31, -39, 91]),
     'l': np.deg2rad([39, 30, 90, -91, 31, -37, 85])}
@@ -527,6 +522,7 @@ class FakePR2:
             self._thread.join()
         return True
 
+
 class ROSUtils:
 
     @staticmethod
@@ -547,8 +543,8 @@ class ROSUtils:
             print("Service call failed: %s" % e)
             return None
         
-    @ staticmethod
-    def _create_joint_traj_msg(joint_names: list, dt: float, traj_frame_id : str, joint_states: list = None, qdot: list = None, q: list = None):
+    @staticmethod
+    def create_joint_traj_msg(joint_names: list, dt: float, traj_frame_id : str, joint_states: list = None, qdot: list = None, q: list = None):
         joint_traj = JointTrajectory()
         joint_traj.header.stamp = rospy.Time.now()
         joint_traj.header.frame_id = traj_frame_id
@@ -566,6 +562,7 @@ class ROSUtils:
         joint_traj.points = [traj_point]
 
         return joint_traj
+
 
 def joy_init():
     pygame.init()
