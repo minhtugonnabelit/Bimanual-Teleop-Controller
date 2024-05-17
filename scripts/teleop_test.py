@@ -3,6 +3,7 @@
 import numpy as np
 import threading
 import copy
+import os
 
 import rospy
 from bimanual_controller.utility import *
@@ -13,14 +14,20 @@ class BMCP:
     DAMPER_STEEPNESS = 5
     MANIP_THRESH = 0.07
     CONTROL_RATE = 50
-    DRIFT_GAIN = 2
-    TWIST_GAIN = [0.1, 0.25]
+    DRIFT_GAIN = {
+        'p': 2,
+        'd': 0.5
+    }
+    TWIST_GAIN = [0.1, 0.1]
 
     def __init__(self) -> None:
 
         self.controller = PR2Controller(
-            name='teleop_test', log_level=2, rate=BMCP.CONTROL_RATE)
+            name='bimanual_controller', log_level=1, rate=BMCP.CONTROL_RATE)
         self.controller.set_manip_thresh(BMCP.MANIP_THRESH)
+        self.controller.move_to_neutral()
+        rospy.loginfo('Robot is in neutral position')
+        rospy.sleep(3)
 
         # State variables
         self._constraint_is_set = False
@@ -57,10 +64,9 @@ class BMCP:
         r"""
         Initial teleoperation function with XBOX joystick
         """
-
+        rospy.loginfo('Start teleop using joystick')
         constraint_is_set = False
         self.switch_to_central_control()
-        rospy.loginfo('Start teleop using joystick')
         self.controller.start_jg_vel_controller()
         self.control_signal_thread.start()
         self.base_controller_thread.start()
@@ -103,10 +109,14 @@ class BMCP:
                 twist, _ = joy_to_twist(joy_msg, BMCP.TWIST_GAIN)
                 twist[0] = -twist[0]
                 twist[1] = -twist[1]
-                twist[3] = -twist[3]
-                twist[4] = -twist[4]
-                rospy.logdebug(f'Twist: {twist}')
 
+                # convert the twist to the world frame
+                left_tool = self.controller.get_tool_pose('l') 
+                right_tool = self.controller.get_tool_pose('r')
+                ad_left = CalcFuncs.adjoint(np.linalg.inv(left_tool))
+                ad_right = CalcFuncs.adjoint(np.linalg.inv(right_tool))
+                twist_left = ad_left @ twist
+                twist_right = ad_right @ twist
                 if joy_msg[0][5] != 1:  # RT trigger to allow control signal to be sent
 
                     # Extract the Jacobians in the middle frame using the virtual robot with joint states data from the real robot
@@ -116,9 +126,9 @@ class BMCP:
 
                     # Calculate the joint velocities using RMRC
                     qdot_right = CalcFuncs.rmrc(
-                        jacob_right, twist, w_thresh=BMCP.MANIP_THRESH)
+                        jacob_right, twist_right, w_thresh=BMCP.MANIP_THRESH)
                     qdot_left = CalcFuncs.rmrc(
-                        jacob_left, twist,  w_thresh=BMCP.MANIP_THRESH)
+                        jacob_left, twist_left,  w_thresh=BMCP.MANIP_THRESH)
                     qdot_combined = np.r_[qdot_left, qdot_right]
 
                     # @TODO: Joint limits avoidance to be added here through nullspace filtering
@@ -128,7 +138,7 @@ class BMCP:
 
                     # Perform nullspace projection for qdot_combined on constraint Jacobian to ensure the twist synchronisatio
                     taskspace_drift_compensation = self.controller.task_drift_compensation(
-                        gain=BMCP.DRIFT_GAIN, taskspace_compensation=True) * 2
+                        gain_p=BMCP.DRIFT_GAIN['p'], gain_d=BMCP.DRIFT_GAIN['d'], on_taskspace=True) * 2
                     qdot = np.linalg.pinv(jacob_constraint) @ taskspace_drift_compensation + CalcFuncs.nullspace_projector(
                         jacob_constraint) @ qdot_combined
 
@@ -137,31 +147,28 @@ class BMCP:
                 twist, _ = joy_to_twist(joy_msg, BMCP.TWIST_GAIN)
 
                 if joy_msg[1][4]:  # left bumper
-
                     if joy_msg[0][5] != 1:
                         ee_pose = np.round(self._right_arm.get_gripper_transform(), 4)
                         qdot[7:] = self.world_twist_to_qdot(ee_pose, twist, side='r')
 
-                    BMCP.handle_gripper(self._right_arm, joy_msg)
-
                 if joy_msg[1][5]:  # right bumper
-
                     if joy_msg[0][5] != 1:
                         rz = np.eye(4)
                         rz[:3, :3] = smb.rotz(np.pi) # rotate the end effector frame in its z axis a pi radian
                         ee_pose = np.round(self._left_arm.get_gripper_transform(), 4) @ rz
                         qdot[:7]= self.world_twist_to_qdot(ee_pose, twist, side='l')
 
-                    BMCP.handle_gripper(self._left_arm, joy_msg)
-
             self._qdot_right = qdot[7:]
             self._qdot_left = qdot[:7]
 
             exec_time = time.perf_counter() - start_time
+            if exec_time > 1/BMCP.CONTROL_RATE:
+                rospy.logwarn(
+                    f'Calculation time exceeds control rate: {exec_time:.4f}')
             rospy.logdebug(
                 f'Calculation time: {exec_time:.4f}')
 
-            time.sleep(1/(BMCP.CONTROL_RATE*10))
+            # time.sleep(1/(BMCP.CONTROL_RATE*10))
 
     def teleop_with_hand_motion(self):
         r"""
@@ -368,8 +375,13 @@ class BMCP:
             twist = np.zeros(6)
             joy_msg = self.controller.get_joy_msg()
             if joy_msg[0][2] != 1:  # left trigger for base controller
-                print('bruh, how did you get here?')
                 twist, _ = joy_to_twist(joy_msg, BMCP.TWIST_GAIN, base=True)
+
+            if joy_msg[1][4]:  # left bumper
+                BMCP.handle_gripper(self._right_arm, joy_msg)
+
+            if joy_msg[1][5]:  # right bumper
+                BMCP.handle_gripper(self._left_arm, joy_msg)
 
             self.controller.move_base(twist)
             self.controller.sleep()

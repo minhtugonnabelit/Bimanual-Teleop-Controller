@@ -1,3 +1,5 @@
+from typing import Union
+
 import numpy as np
 import spatialmath as sm
 import spatialmath.base as smb
@@ -10,13 +12,16 @@ import threading
 from copy import deepcopy
 import math
 import pygame
-import sys, os
+import sys
 import time
 import matplotlib.pyplot as plt
 
 import rospy
 from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+
+ArrayLike = Union[list, np.ndarray, tuple, set]
+
 
 SAMPLE_STATES = {
     'r': np.deg2rad([-40, 30, -90, -91, -31, -39, 91]),
@@ -58,7 +63,8 @@ class CalcFuncs:
         ad = np.eye(6, 6)
         ad[:3, :3] = R
         ad[3:, 3:] = R
-        ad[:3, 3:] = np.cross(p, R)
+        # ad[:3, 3:] = np.cross(p, R)
+        ad[3:, :3] = np.cross(p, R)
 
         return ad
 
@@ -91,24 +97,18 @@ class CalcFuncs:
 
         """
 
-        # calculate manipulability
         w = CalcFuncs.manipulability(jacob)
 
-        # set threshold and damping
         max_damp = 1
 
-        # if manipulability is less than threshold, add damping
         damp = (1 - np.power(w/w_thresh, 2)) * max_damp if w < w_thresh else 0
         if w < w_thresh:
             print(f"Manipulability: {w:.2f} Damping: {damp:.2f}")
 
-        # calculate damped least square
         j_dls = np.transpose(jacob) @ np.linalg.inv(jacob @
                                                     np.transpose(jacob) + np.power(damp, 2) * np.eye(6))
 
-        # get joint velocities, if robot is in singularity, use damped least square
         qdot = j_dls @ np.transpose(twist)
-
         return qdot
     
     @staticmethod
@@ -135,10 +135,7 @@ class CalcFuncs:
         qdot_left = CalcFuncs.rmrc(jacob_l, twist)
         qdot_right = CalcFuncs.rmrc(jacob_r, twist)
 
-        # Combine the joint velocities of the left and right arms
         qdotc = np.r_[qdot_left, qdot_right]
-
-        # Combine the Jacobians of the left and right arms
         jacob_c = np.c_[jacob_l, -jacob_r]
 
         if activate_nullspace:
@@ -188,7 +185,96 @@ class CalcFuncs:
 
         e[3:] = a
 
-        return e, angle, axis
+        return e
+    
+    @staticmethod
+    def pd_servo(
+        wTe, 
+        wTep, 
+        prev_error: np.ndarray, 
+        gain_p: Union[float, ArrayLike] = 1.0, 
+        gain_d: Union[float, ArrayLike] = 0.0,
+        threshold=0.1, 
+        method="rpy",
+        dt=0.001
+    ):
+        """
+        Position-based servoing.
+
+        Returns the end-effector velocity which will cause the robot to approach
+        the desired pose.
+
+        :param wTe: The current pose of the end-effecor in the base frame.
+        :type wTe: SE3 or ndarray
+        :param wTep: The desired pose of the end-effecor in the base frame.
+        :type wTep: SE3 or ndarray
+        :param cumulative_linear_error: The cumulative linear error of the robot.
+        :type cumulative_linear_error: ndarray(3)
+        :param cumulative_angular_error: The cumulative angular error of the robot.
+        :type cumulative_angular_error: ndarray(3)
+        :param gain_p: The proportional gain for the controller. Can be vector corresponding to each
+            axis, or scalar corresponding to all axes.
+        :type gain_p: float, or array-like
+        :param gain_i: The integral gain for the controller. Can be vector corresponding to each
+            axis, or scalar corresponding to all axes.
+        :param threshold: The threshold or tolerance of the final error between
+            the robot's pose and desired pose
+        :type threshold: float
+        :param method: The method used to calculate the error. Default is 'rpy' -
+            error in the end-effector frame. 'angle-axis' - error in the base frame
+            using angle-axis method.
+        :type method: string: 'rpy' or 'angle-axis'
+
+        :returns v: The velocity of the end-effecotr which will casue the robot
+            to approach wTep
+        :rtype v: ndarray(6)
+        :returns arrived: True if the robot is within the threshold of the final
+            pose
+        :rtype arrived: bool
+
+        """
+
+        if isinstance(wTe, sm.SE3):
+            wTe = wTe.A
+
+        if isinstance(wTep, sm.SE3):
+            wTep = wTep.A
+
+        if method == "rpy":
+            # Pose difference
+            eTep = np.linalg.inv(wTe) @ wTep
+            e = np.empty(6)
+
+            # Translational error
+            e[:3] = eTep[:3, -1]
+
+            # Angular error
+            e[3:] = smb.tr2rpy(eTep, unit="rad", order="zyx", check=False)
+        else:
+            e = CalcFuncs.angle_axis_python(wTe, wTep)
+
+        # Calculate the derivative of the error
+        d_error = (e - prev_error) / dt
+
+        if smb.isscalar(gain_p):
+            kp = gain_p * np.eye(6)
+        else:
+            kp = np.diag(gain_p)
+
+        if smb.isscalar(gain_d):
+            kd = gain_d * np.eye(6)
+        else:
+            kd = np.diag(gain_d)
+
+        v = kp @ e
+
+        vd = kd @ d_error
+
+        v = v + vd
+
+        arrived = True if np.sum(np.abs(e)) < threshold else False
+
+        return v, arrived, e
     
     @staticmethod
     def weight(x, k):
@@ -310,6 +396,7 @@ class FakePR2:
         self._launch_visualizer = launch_visualizer
         self._robot = rtb.models.PR2()
         self._is_collapsed = False
+        self._drift_error = np.zeros(6)
         self._tool_offset = {
             'l': np.eye(4),
             'r': np.eye(4)
@@ -493,18 +580,22 @@ class FakePR2:
 
         return qdot_repulsive, weights.max()
 
-    def task_drift_compensation(self,  gain = 5, taskspace_compensation=True) -> np.ndarray:
+    def task_drift_compensation(self,  gain_p = 5, gain_d = 0.5, on_taskspace=True) -> np.ndarray:
         r"""
         Get the drift compensation for the robot
         :return: drift compensation velocities as joint velocities
         """
-        v, _ = rtb.p_servo(self.get_tool_pose(side='l', offset=True),
-                           self.get_tool_pose(side='r', offset=True),
-                           gain=gain,
-                           threshold=0.005,
-                           method='angle-axis')
+    
+        v, _, self._drift_error = CalcFuncs.pd_servo(self.get_tool_pose(side='l', offset=True),
+                                                    self.get_tool_pose(side='r', offset=True),
+                                                    self._drift_error,
+                                                    gain_p=gain_p,
+                                                    gain_d=gain_d,
+                                                    threshold=0.005,
+                                                    method='angle-axis',
+                                                    dt=1/self._control_rate)
 
-        if taskspace_compensation:
+        if on_taskspace:
             return v
         else:
             qdot_fix_left = CalcFuncs.rmrc(self.get_jacobian('l'), v, w_thresh=0.05)
@@ -602,18 +693,6 @@ def joy_to_twist(joy, gain, base=False):
 
     else:
 
-        # if joy[1][-3]:
-        #     done = True
-
-        # vz = ((lpf(joy[0][5] + 1)) - (lpf(joy[0][2] + 1)))/2
-        # y = joy[1][1] * 0.5 - joy[1][3] * 0.5
-
-        # # Low pass filter
-        # vy = lpf(joy[0][0])
-        # vx = lpf(joy[0][1])
-        # r = lpf(joy[0][3])
-        # p = lpf(joy[0][4])
-
         trigger_side = 5 if not base else 2
         agressive =  (-lpf(joy[0][trigger_side]) + 1)/2 
 
@@ -636,9 +715,6 @@ def joy_to_twist(joy, gain, base=False):
 
 def lpf(value, threshold=0.1):
     return value if abs(value) > threshold else 0
-
-def map_interval(x):
-    return 0.03 * (x + 1)
 
 def plot_joint_velocities(actual_data: np.ndarray, desired_data: np.ndarray, dt=0.001, title='Joint Velocities'):
 
@@ -787,7 +863,7 @@ def plot_manip_and_drift(constraint_distance: float,
     drift_axes.axhline(y=constraint_distance, color='r', linewidth=1)
 
     drift_axes.annotate(f'Constraint {constraint_distance:.4f}',
-                        xy=(time_space[time_space.size//2], 0.35),
+                        xy=(time_space[time_space.size//2], constraint_distance),
                         xytext=(10, 0),
                         textcoords='offset points',
                         ha='center', va='bottom', color='r')

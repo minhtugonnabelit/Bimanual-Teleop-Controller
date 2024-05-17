@@ -1,13 +1,6 @@
 # /usr/bin/env python3
 
-# This file contains the PR2Controller class that is used to control the PR2 robot
-#
-# The PR2Controller class is used to control the PR2 robot.
-# It is responsible for setting up the robot model, initializing the arms, and handling the joint states and joystick messages.
-# It also provides functions to move the robot to a neutral position, open and close the grippers, and send joint velocities to the robot.
-
 import rospy
-
 from std_msgs.msg import Float64MultiArray
 from sensor_msgs.msg import JointState, Joy
 from geometry_msgs.msg import Twist
@@ -49,7 +42,8 @@ class PR2Controller:
         self._joint_state_sub = rospy.Subscriber(
             '/joint_states', JointState, self.__joint_state_callback)
 
-        self._joy_msg = rospy.wait_for_message('/joy', Joy)
+        joy = rospy.wait_for_message('/joy', Joy)
+        self._joy_msg = (joy.axes, joy.buttons)
         self._joy_pygame = joy_init()
         self._rumbled = False
         self._joystick_sub = rospy.Subscriber(
@@ -92,7 +86,7 @@ class PR2Controller:
         if self._rumbled:
             self._joy_pygame.stop_rumble()
         PR2Controller.kill_jg_vel_controller()
-        self.move_to_neutral()
+        # self.move_to_neutral()
 
         joint_limits = self._virtual_robot.get_joint_limits_all()
         fig, ax = plot_manip_and_drift(
@@ -215,7 +209,7 @@ class PR2Controller:
             self._rumbled = False
         return joint_limits_damper
 
-    def task_drift_compensation(self, gain=5, taskspace_compensation=True):
+    def task_drift_compensation(self, gain_p=5, gain_d=0.5, on_taskspace=True):
         r"""
         Task drift compensator mechanism 
 
@@ -227,7 +221,7 @@ class PR2Controller:
             list: Joint velocities with task drift compensation mechanism applied
         """
 
-        return self._virtual_robot.task_drift_compensation(gain, taskspace_compensation)
+        return self._virtual_robot.task_drift_compensation(gain_p, gain_d, on_taskspace)
     
     @ staticmethod
     def start_jg_vel_controller():

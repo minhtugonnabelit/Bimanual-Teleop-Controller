@@ -25,8 +25,10 @@ This package provides a bimanual teleoperation controller for controlling a robo
     ```
 
 #### Note:
-
-
+To sync time between host machine and ssh machine
+``` bash
+ssh -t pr2@10.68.0.1 sudo date --set @$(date -u +%s) 
+```
 
 ## Contributors
 

@@ -89,7 +89,7 @@ class ArmController:
         goal = FollowJointTrajectoryGoal()
         goal.trajectory = ROSUtils.create_joint_traj_msg(
             self._joint_names,
-            3,
+            2,
             self._robot_base_frame,
             q=SAMPLE_STATES[self._name])
         
