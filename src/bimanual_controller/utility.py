@@ -782,8 +782,8 @@ def joy_to_twist(joy, gain, base=False):
 
         if not base:
             vz = joy[1][3] - joy[1][0] # button Y and A
-            r = - lpf(joy[0][3]) / np.abs(lpf(joy[0][3])) if lpf(joy[0][3]) != 0 else 0
-            p = lpf(joy[0][4]) / np.abs(lpf(joy[0][4])) if lpf(joy[0][4]) != 0 else 0
+            r = lpf(joy[0][3]) / np.abs(lpf(joy[0][3])) if lpf(joy[0][3]) != 0 else 0
+            p = - lpf(joy[0][4]) / np.abs(lpf(joy[0][4])) if lpf(joy[0][4]) != 0 else 0
 
         
     # ---------------------------------------------------------------------------#

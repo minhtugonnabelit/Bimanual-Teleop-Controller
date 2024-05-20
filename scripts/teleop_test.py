@@ -16,7 +16,7 @@ class BMCP:
     CONTROL_RATE = 50
     TWIST_GAIN = [0.1, 0.1]
     DRIFT_GAIN = {
-        'p': [2,2,2,4,4,4],
+        'p': [2,2,2,8,8,8],
         'd': 0.8
     }
 
