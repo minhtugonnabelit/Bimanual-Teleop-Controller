@@ -22,10 +22,9 @@ from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 ArrayLike = Union[list, np.ndarray, tuple, set]
 
-
 SAMPLE_STATES = {
     'r': np.deg2rad([-40, 30, -90, -91, -31, -39, 91]),
-    'l': np.deg2rad([39, 30, 90, -91, 31, -37, 85])}
+    'l': np.deg2rad([39, 27, 91, -92, 31, -38, 85])}
 
 JOINT_NAMES = {
     "left": [
@@ -102,11 +101,9 @@ class CalcFuncs:
         max_damp = 1
 
         damp = (1 - np.power(w/w_thresh, 2)) * max_damp if w < w_thresh else 0
-        if w < w_thresh:
-            print(f"Manipulability: {w:.2f} Damping: {damp:.2f}")
 
         j_dls = np.transpose(jacob) @ np.linalg.inv(jacob @
-                                                    np.transpose(jacob) + np.power(damp, 2) * np.eye(6))
+                                                    np.transpose(jacob) + damp * np.eye(6))
 
         qdot = j_dls @ np.transpose(twist)
         return qdot
@@ -326,6 +323,10 @@ class CalcFuncs:
             return True, last_switch_time
         else:
             return False, last_switch_time
+    
+    @staticmethod
+    def lerp(start, end, t):
+        return start + t * (end - start)
 
 
 class AnimateFuncs:
@@ -419,11 +420,11 @@ class FakePR2:
         self.qmid = (qmin + qmax) / 2
 
         # Normal joint with soft limits start at 80% and end at 90% of the joint limits
-        self.soft_limit_start = ((qmax - qmin)/2) * 0.8
+        self.soft_limit_start = ((qmax - qmin)/2) * 0.75
         self.soft_limit_end = ((qmax - qmin)/2) * 0.9
 
         # Except for the shoulder lift joints of both arms
-        self.soft_limit_start[1] = ((qmax[1] - qmin[1])/2) * 0.75
+        self.soft_limit_start[1] = ((qmax[1] - qmin[1])/2) * 0.7
         self.soft_limit_start[8] = deepcopy(self.soft_limit_start[1])
 
         self.soft_limit_range = (self.soft_limit_end - self.soft_limit_start)
@@ -550,8 +551,14 @@ class FakePR2:
 
         :return: Jacobian
         """
-
         return self._robot.jacobe(self._robot.q, end=self._arms_frame[side]['end'], start=self._arms_frame[side]['start'], tool=self._tool_offset[side])
+
+    def get_twist_in_tool_frame(self, side, twist):
+                        
+        tool = self.get_tool_pose(side) 
+        twist_converted= CalcFuncs.adjoint(np.linalg.inv(tool)) @ twist
+
+        return twist_converted
 
     def joint_limits_damper(self, qdot, dt, steepness=10):
         r"""
@@ -578,7 +585,82 @@ class FakePR2:
         weights = CalcFuncs.weight_vector(x, steepness)
         qdot_repulsive = - weights.max() * qdot
 
+        return qdot_repulsive, weights.max(), np.where(weights == weights.max())[0]
+    
+    def joint_limits_damper_side(self, qdot, dt, side, steepness=10):
+        r"""
+        Repulsive potential field for joint limits for both arms
+        :param qdot: joint velocities
+        :param steepness: steepness of the transition
+        :return: repulsive velocity potential field 
+        """
+        # Get the joint positions for next step
+        q = self.get_joint_positions(side) + qdot * dt
+        arm_offset = 0 if side == 'l' else 7
+        
+        x = np.zeros(qdot.shape[0])
+        for i in range(len(x)):
+            qi, qm, qsls, qsle, qslr = q[i], self.qmid[i+arm_offset],  self.soft_limit_start[i+arm_offset], self.soft_limit_end[i+arm_offset], self.soft_limit_range[i+arm_offset]
+            a = np.abs(qi - qm)
+            if a < qsls:
+                x[i] = 0
+            elif a < qsle and a > qsls:
+                x[i] = np.round(np.abs(a-qsls) / qslr , 4)
+            else:
+                x[i] = 1
+
+        weights = CalcFuncs.weight_vector(x, steepness)
+        qdot_repulsive = - weights.max() * qdot
+
+        return qdot_repulsive, weights.max(), np.where(weights == weights.max())[0]
+    
+    def joint_limits_damper_left(self, qdot, dt, steepness=10):
+        r"""
+        Repulsive potential field for joint limits for both arms
+        :param qdot: joint velocities
+        :param steepness: steepness of the transition
+        :return: repulsive velocity potential field 
+        """
+        # Get the joint positions for next step
+        q = self.get_joint_positions('l') + qdot * dt
+        
+        x = np.zeros(qdot.shape[0])
+        for i in range(len(x)):
+            qi, qm, qsls, qsle, qslr = q[i], self.qmid[i],  self.soft_limit_start[i], self.soft_limit_end[i], self.soft_limit_range[i]
+            a = np.abs(qi - qm)
+            if a < qsls:
+                x[i] = 0
+            elif a < qsle and a > qsls:
+                x[i] = np.round(np.abs(a-qsls) / qslr , 4)
+            else:
+                x[i] = 1
+
+        weights = CalcFuncs.weight_vector(x, steepness)
+        qdot_repulsive = - weights.max() * qdot
+
         return qdot_repulsive, weights.max()
+    
+    def joint_limits_damper_right(self, qdot, dt, steepness=10):
+
+        # Get the joint positions for next step
+        q = self.get_joint_positions('r') + qdot * dt
+
+        x = np.zeros(qdot.shape[0])
+        for i in range(len(x)):
+            qi, qm, qsls, qsle, qslr = q[i], self.qmid[i+7],  self.soft_limit_start[i+7], self.soft_limit_end[i+7], self.soft_limit_range[i+7]
+            a = np.abs(qi - qm)
+            if a < qsls:
+                x[i] = 0
+            elif a < qsle and a > qsls:
+                x[i] = np.round(np.abs(a-qsls) / qslr , 4)
+            else:
+                x[i] = 1
+
+        weights = CalcFuncs.weight_vector(x, steepness)
+        qdot_repulsive = - weights.max() * qdot
+
+        return qdot_repulsive, weights.max()
+
 
     def task_drift_compensation(self,  gain_p = 5, gain_d = 0.5, on_taskspace=True) -> np.ndarray:
         r"""
@@ -591,7 +673,7 @@ class FakePR2:
                                                     self._drift_error,
                                                     gain_p=gain_p,
                                                     gain_d=gain_d,
-                                                    threshold=0.005,
+                                                    threshold=0.001,
                                                     method='angle-axis',
                                                     dt=1/self._control_rate)
 
@@ -631,7 +713,7 @@ class ROSUtils:
             response = service(**kwargs)
             return response
         except rospy.ServiceException as e:
-            print("Service call failed: %s" % e)
+            rospy.logerr_once("Service call failed: %s" % e)
             return None
         
     @staticmethod
@@ -697,13 +779,13 @@ def joy_to_twist(joy, gain, base=False):
         agressive =  (-lpf(joy[0][trigger_side]) + 1)/2 
 
         # Low pass filter
-        vy = lpf(joy[0][0]) / np.abs(lpf(joy[0][0])) if lpf(joy[0][0]) != 0 else 0
-        vx = lpf(joy[0][1]) / np.abs(lpf(joy[0][1])) if lpf(joy[0][1]) != 0 else 0
+        vy = - lpf(joy[0][0]) / np.abs(lpf(joy[0][0])) if lpf(joy[0][0]) != 0 else 0
+        vx = - lpf(joy[0][1]) / np.abs(lpf(joy[0][1])) if lpf(joy[0][1]) != 0 else 0
         y = joy[1][2] - joy[1][1] # button X and B
 
         if not base:
             vz = joy[1][3] - joy[1][0] # button Y and A
-            r = lpf(joy[0][3]) / np.abs(lpf(joy[0][3])) if lpf(joy[0][3]) != 0 else 0
+            r = - lpf(joy[0][3]) / np.abs(lpf(joy[0][3])) if lpf(joy[0][3]) != 0 else 0
             p = lpf(joy[0][4]) / np.abs(lpf(joy[0][4])) if lpf(joy[0][4]) != 0 else 0
 
         

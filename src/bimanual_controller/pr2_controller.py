@@ -86,7 +86,6 @@ class PR2Controller:
         if self._rumbled:
             self._joy_pygame.stop_rumble()
         PR2Controller.kill_jg_vel_controller()
-        # self.move_to_neutral()
 
         joint_limits = self._virtual_robot.get_joint_limits_all()
         fig, ax = plot_manip_and_drift(
@@ -119,30 +118,6 @@ class PR2Controller:
     def set_manip_thresh(self, manip_thresh):
         self._manip_thresh = manip_thresh
 
-    def move_to_neutral(self):
-        result_r = self._right_arm.move_to_neutral()
-        result_l = self._left_arm.move_to_neutral()
-        return result_l
-
-    def move_base(self, twist):
-        twist_msg = Twist()
-        twist_msg.linear.x = twist[0]
-        twist_msg.linear.y = twist[1]
-        twist_msg.angular.z = twist[2]
-        twist_msg.angular.x = twist[3]
-        twist_msg.angular.y = twist[4]
-        twist_msg.angular.z = twist[5]
-        self._base_controller_pub.publish(twist_msg)
-
-    def __joint_state_callback(self, msg: JointState):
-        self._joint_states = msg
-        self._virtual_robot.set_states(self._joint_states.position)
-
-    def __joystick_callback(self, msg: Joy):
-        self._joy_msg = (msg.axes, msg.buttons)
-
-    # def __hydra_joystick_callback(self, msg: Joy, side: str):
-    #     self._hydra_joy_msg[side] = (msg.axes, msg.buttons)
 
     # Getters
 
@@ -171,9 +146,6 @@ class PR2Controller:
 
     #     return xdot, synced
 
-    def get_joy_msg(self):
-        return self._joy_msg
-
     def get_arm_controller(self, side: str):
         return self._right_arm if side == 'r' else self._left_arm
 
@@ -185,6 +157,10 @@ class PR2Controller:
 
     def get_tool_pose(self, side: str, isOffset=True):
         return self._virtual_robot.get_tool_pose(side, isOffset)
+    
+    def get_twist_in_tool_frame(self, side: str, twist):
+        return self._virtual_robot.get_twist_in_tool_frame(side, twist)
+
 
     def joint_limit_damper(self, qdot, steepness=10) -> list:
         r"""
@@ -196,17 +172,54 @@ class PR2Controller:
         Returns:
             list: Joint velocities with joint limit avoidance mechanism applied
         """
-        joint_limits_damper, max_weights = self._virtual_robot.joint_limits_damper(
+        joint_limits_damper, max_weights, joint_on_max_limit = self._virtual_robot.joint_limits_damper(
             qdot, self._dt, steepness)
 
         if max_weights > 0.8:
+
+            side = 'right'
+            if joint_on_max_limit > 6:
+                joint_on_max_limit -= 7
+                side = 'left'
+
             rumble_freq = (max_weights - 0.8)*3
             self._rumbled = self._joy_pygame.rumble(rumble_freq, 2*rumble_freq, 0)
             rospy.logwarn(
-                f"\nJoint limit avoidance mechanism is applied with max weight: {max_weights:.2f}")
+                f"\nJoint limit avoidance mechanism is applied with max weight: {max_weights:.2f} at joint {JOINT_NAMES[side][joint_on_max_limit[0]]}")
         else :
             self._joy_pygame.stop_rumble() if self._rumbled else None
             self._rumbled = False
+        return joint_limits_damper
+
+    def joint_limit_damper_side(self, side: str, qdot, steepness=10) -> list:
+            
+        joint_limits_damper, max_weights, joint_on_max_limit = self._virtual_robot.joint_limits_damper_side(
+            side, qdot, self._dt, steepness)
+
+        if max_weights > 0.8:
+            side = 'left' if side == 'l' else 'right'
+            rumble_freq = (max_weights - 0.8)*3
+            self._rumbled = self._joy_pygame.rumble(rumble_freq, 2*rumble_freq, 0)
+            rospy.logwarn(
+                f"\nJoint limit avoidance mechanism is applied with max weight: {max_weights:.2f} at joint {JOINT_NAMES[side][joint_on_max_limit[0]]}")
+        else:
+            self._joy_pygame.stop_rumble() if self._rumbled else None
+            self._rumbled = False
+
+        return joint_limits_damper
+
+    def joint_limit_damper_right(self, qdot, steepness=10) -> list:
+
+        joint_limits_damper, _ = self._virtual_robot.joint_limits_damper_right(
+            qdot, self._dt, steepness)
+
+        return joint_limits_damper 
+    
+    def joint_limit_damper_left(self, qdot, steepness=10) -> list:
+
+        joint_limits_damper, _ = self._virtual_robot.joint_limits_damper_left(
+            qdot, self._dt, steepness)
+
         return joint_limits_damper
 
     def task_drift_compensation(self, gain_p=5, gain_d=0.5, on_taskspace=True):
@@ -222,7 +235,39 @@ class PR2Controller:
         """
 
         return self._virtual_robot.task_drift_compensation(gain_p, gain_d, on_taskspace)
+
+
+    def move_to_neutral(self):
+        result_r = self._right_arm.move_to_neutral()
+        result_l = self._left_arm.move_to_neutral()
+        return result_l
+
+    def move_base(self, twist):
+        twist_msg = Twist()
+        twist_msg.linear.x = twist[0]
+        twist_msg.linear.y = twist[1]
+        twist_msg.angular.z = twist[2]
+        twist_msg.angular.x = twist[3]
+        twist_msg.angular.y = twist[4]
+        twist_msg.angular.z = twist[5]
+        self._base_controller_pub.publish(twist_msg)
+
+
+    #  TODO: Implement the following methods as separate class for the joystick
+    def __joystick_callback(self, msg: Joy):
+        self._joy_msg = (msg.axes, msg.buttons)
+
+    def get_joy_msg(self):
+        return self._joy_msg
+
+    def rumble_joy(self, freq, duration):
+        self._rumbled = self._joy_pygame.rumble(freq, duration, 0)
     
+    def rumble_stop(self):
+        self._joy_pygame.stop_rumble() if self._rumbled else None
+        self._rumbled = False
+    
+
     @ staticmethod
     def start_jg_vel_controller():
         rospy.loginfo('Loading and starting velocity controllers')
@@ -260,7 +305,14 @@ class PR2Controller:
 
         return switched
 
-    # Record function
+
+    def __joint_state_callback(self, msg: JointState):
+        self._joint_states = msg
+        self._virtual_robot.set_states(self._joint_states.position)
+
+    # def __hydra_joystick_callback(self, msg: Joy, side: str):
+    #     self._hydra_joy_msg[side] = (msg.axes, msg.buttons)
+
 
     def store_constraint_distance(self, distance: float):
         self._constraint_distance = distance
