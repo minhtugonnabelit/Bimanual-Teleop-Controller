@@ -14,11 +14,12 @@ class BMCP:
     DAMPER_STEEPNESS = 5
     MANIP_THRESH = 0.05
     CONTROL_RATE = 50
+    TWIST_GAIN = [0.1, 0.1]
     DRIFT_GAIN = {
         'p': [4,4,4,8,8,8],
         'd': 0.8
     }
-    TWIST_GAIN = [0.1, 0.1]
+
 
     def __init__(self) -> None:
 
@@ -106,20 +107,12 @@ class BMCP:
                     'Constraint is set, switching controllers, started velocity controller thread')
 
             # Once constraint is set, start the teleoperation using
+            twist, _ = joy_to_twist(joy_msg, BMCP.TWIST_GAIN)
             if constraint_is_set:
 
                 # Exrtact the twist from the joystick message
-                twist, _ = joy_to_twist(joy_msg, BMCP.TWIST_GAIN)
-
-                # convert the twist to the world frame
-                # left_tool = self.controller.get_tool_pose('l') 
-                # ad_left = CalcFuncs.adjoint(np.linalg.inv(left_tool))
-                # twist_left = ad_left @ twist
-                twist_left = self.controller.get_twist_in_tool_frame(twist, 'l')
-                # right_tool = self.controller.get_tool_pose('r')
-                # ad_right = CalcFuncs.adjoint(np.linalg.inv(right_tool))
-                # twist_right = ad_right @ twist
-                twist_right = self.controller.get_twist_in_tool_frame(twist, 'r')
+                twist_left = self.controller.get_twist_in_tool_frame(side='l', twist=twist)
+                twist_right = self.controller.get_twist_in_tool_frame(side='r', twist=twist)
 
                 
                 if joy_msg[0][5] != 1:  # RT trigger to allow control signal to be sent
@@ -148,24 +141,20 @@ class BMCP:
                     qdot += joint_limits_damper
                     
             else:
-                twist, _ = joy_to_twist(joy_msg, BMCP.TWIST_GAIN)
                 
                 # TODO: refactor this part to be more modular
                 if joy_msg[1][4]:  # left bumper
                     if joy_msg[0][5] != 1:
-                        ee_pose = np.round(self._right_arm.get_gripper_transform(), 4)
-                        qdot_indiv, twist_converted, jacob = self.world_twist_to_qdot(ee_pose, twist, side='r')
-                        qdot_indiv += self.controller.joint_limit_damper_side(side='r', qdot=qdot_indiv, steepness=BMCP.DAMPER_STEEPNESS)
-                        # qdot_indiv += self.controller.joint_limit_damper_right(qdot_indiv, steepness=BMCP.DAMPER_STEEPNESS)
-                        qdot[7:] = np.linalg.pinv(jacob) @ twist_converted + CalcFuncs.nullspace_projector(jacob) @ qdot_indiv
-
+                        qdot[7:] = self.controller.process_arm_movement(side='r', 
+                                                                        twist=twist, 
+                                                                        manip_thresh=BMCP.MANIP_THRESH, 
+                                                                        damper_steepness=BMCP.DAMPER_STEEPNESS)
                 if joy_msg[1][5]:  # right bumper
                     if joy_msg[0][5] != 1:
-                        ee_pose = np.round(self._left_arm.get_gripper_transform(), 4) 
-                        qdot_indiv,twist_converted, jacob = self.world_twist_to_qdot(ee_pose, twist, side='l')
-                        qdot_indiv += self.controller.joint_limit_damper_side(side='l', qdot=qdot_indiv, steepness=BMCP.DAMPER_STEEPNESS)
-                        # qdot_indiv += self.controller.joint_limit_damper_left(qdot_indiv, steepness=BMCP.DAMPER_STEEPNESS)
-                        qdot[:7] += np.linalg.pinv(jacob) @ twist_converted + CalcFuncs.nullspace_projector(jacob) @ qdot_indiv
+                        qdot[:7] = self.controller.process_arm_movement(side='l',
+                                                                        twist=twist, 
+                                                                        manip_thresh=BMCP.MANIP_THRESH, 
+                                                                        damper_steepness=BMCP.DAMPER_STEEPNESS)
 
             self._qdot_right = qdot[7:]
             self._qdot_left = qdot[:7]
@@ -278,14 +267,6 @@ class BMCP:
         elif - joy_msg[0][-1] == 1:  # down
             arm.close_gripper()
 
-    # TODO: Put this function in a utility class as a calculation function
-    def world_twist_to_qdot(self, ee_pose : np.ndarray, twist : list, side) -> list:
-        adjoint = CalcFuncs.adjoint(np.linalg.inv(ee_pose))
-        twist = adjoint @ twist
-        jacob = self.controller.get_jacobian(side=side)
-        qdot = CalcFuncs.rmrc(jacob, twist, w_thresh=BMCP.MANIP_THRESH)
-
-        return qdot, twist, jacob
 
     def hand_controller(self, side):
 

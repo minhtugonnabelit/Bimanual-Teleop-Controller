@@ -252,6 +252,26 @@ class PR2Controller:
         twist_msg.angular.z = twist[5]
         self._base_controller_pub.publish(twist_msg)
 
+    def process_arm_movement(self, side: str, twist, manip_thresh, joint_limit_damper=True, damper_steepness=10):
+        ee_pose = np.round(self._right_arm.get_gripper_transform(), 4) if side == 'r' else np.round(self._left_arm.get_gripper_transform(), 4)
+        
+        qdot_indiv, twist_converted, jacob = self._world_twist_to_qdot(ee_pose, twist, side=side, manip_thresh=manip_thresh)
+        
+        if joint_limit_damper:
+            qdot_indiv += self.joint_limit_damper_side(side=side, qdot=qdot_indiv, steepness=damper_steepness)
+        
+        qdot = np.linalg.pinv(jacob) @ twist_converted + CalcFuncs.nullspace_projector(jacob) @ qdot_indiv
+        return qdot
+
+    # TODO: Put this function in a utility class as a calculation function
+    def _world_twist_to_qdot(self, ee_pose : np.ndarray, twist : list, side, manip_thresh) -> list:
+        adjoint = CalcFuncs.adjoint(np.linalg.inv(ee_pose))
+        twist = adjoint @ twist
+        jacob = self.get_jacobian(side=side)
+        qdot = CalcFuncs.rmrc(jacob, twist, w_thresh=manip_thresh)
+
+        return qdot, twist, jacob
+
 
     #  TODO: Implement the following methods as separate class for the joystick
     def __joystick_callback(self, msg: Joy):
@@ -312,7 +332,6 @@ class PR2Controller:
 
     # def __hydra_joystick_callback(self, msg: Joy, side: str):
     #     self._hydra_joy_msg[side] = (msg.axes, msg.buttons)
-
 
     def store_constraint_distance(self, distance: float):
         self._constraint_distance = distance

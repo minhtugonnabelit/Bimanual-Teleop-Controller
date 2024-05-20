@@ -17,7 +17,6 @@ import time
 import matplotlib.pyplot as plt
 
 import rospy
-from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 ArrayLike = Union[list, np.ndarray, tuple, set]
@@ -62,7 +61,6 @@ class CalcFuncs:
         ad = np.eye(6, 6)
         ad[:3, :3] = R
         ad[3:, 3:] = R
-        # ad[:3, 3:] = np.cross(p, R)
         ad[3:, :3] = np.cross(p, R)
 
         return ad
@@ -99,8 +97,8 @@ class CalcFuncs:
         w = CalcFuncs.manipulability(jacob)
 
         max_damp = 1
-
-        damp = (1 - np.power(w/w_thresh, 2)) * max_damp if w < w_thresh else 0
+        # damp = (1 - np.power(w/w_thresh, 2)) * max_damp if w < w_thresh else 0
+        damp = np.power(1 - w/w_thresh, 2) * max_damp if w < w_thresh else 0
 
         j_dls = np.transpose(jacob) @ np.linalg.inv(jacob @
                                                     np.transpose(jacob) + damp * np.eye(6))
@@ -169,7 +167,6 @@ class CalcFuncs:
         if smb.iszerovec(li):
             # diagonal matrix case
             if np.trace(R) > 0:
-                # (1,1,1) case
                 a = np.zeros((3,))
             else:
                 a = np.pi / 2 * (np.diag(R) + 1)
@@ -587,7 +584,7 @@ class FakePR2:
 
         return qdot_repulsive, weights.max(), np.where(weights == weights.max())[0]
     
-    def joint_limits_damper_side(self, qdot, dt, side, steepness=10):
+    def joint_limits_damper_side(self, side, qdot, dt, steepness=10):
         r"""
         Repulsive potential field for joint limits for both arms
         :param qdot: joint velocities
@@ -614,52 +611,52 @@ class FakePR2:
 
         return qdot_repulsive, weights.max(), np.where(weights == weights.max())[0]
     
-    def joint_limits_damper_left(self, qdot, dt, steepness=10):
-        r"""
-        Repulsive potential field for joint limits for both arms
-        :param qdot: joint velocities
-        :param steepness: steepness of the transition
-        :return: repulsive velocity potential field 
-        """
-        # Get the joint positions for next step
-        q = self.get_joint_positions('l') + qdot * dt
+    # def joint_limits_damper_left(self, qdot, dt, steepness=10):
+    #     r"""
+    #     Repulsive potential field for joint limits for both arms
+    #     :param qdot: joint velocities
+    #     :param steepness: steepness of the transition
+    #     :return: repulsive velocity potential field 
+    #     """
+    #     # Get the joint positions for next step
+    #     q = self.get_joint_positions('l') + qdot * dt
         
-        x = np.zeros(qdot.shape[0])
-        for i in range(len(x)):
-            qi, qm, qsls, qsle, qslr = q[i], self.qmid[i],  self.soft_limit_start[i], self.soft_limit_end[i], self.soft_limit_range[i]
-            a = np.abs(qi - qm)
-            if a < qsls:
-                x[i] = 0
-            elif a < qsle and a > qsls:
-                x[i] = np.round(np.abs(a-qsls) / qslr , 4)
-            else:
-                x[i] = 1
+    #     x = np.zeros(qdot.shape[0])
+    #     for i in range(len(x)):
+    #         qi, qm, qsls, qsle, qslr = q[i], self.qmid[i],  self.soft_limit_start[i], self.soft_limit_end[i], self.soft_limit_range[i]
+    #         a = np.abs(qi - qm)
+    #         if a < qsls:
+    #             x[i] = 0
+    #         elif a < qsle and a > qsls:
+    #             x[i] = np.round(np.abs(a-qsls) / qslr , 4)
+    #         else:
+    #             x[i] = 1
 
-        weights = CalcFuncs.weight_vector(x, steepness)
-        qdot_repulsive = - weights.max() * qdot
+    #     weights = CalcFuncs.weight_vector(x, steepness)
+    #     qdot_repulsive = - weights.max() * qdot
 
-        return qdot_repulsive, weights.max()
+    #     return qdot_repulsive, weights.max()
     
-    def joint_limits_damper_right(self, qdot, dt, steepness=10):
+    # def joint_limits_damper_right(self, qdot, dt, steepness=10):
 
-        # Get the joint positions for next step
-        q = self.get_joint_positions('r') + qdot * dt
+    #     # Get the joint positions for next step
+    #     q = self.get_joint_positions('r') + qdot * dt
 
-        x = np.zeros(qdot.shape[0])
-        for i in range(len(x)):
-            qi, qm, qsls, qsle, qslr = q[i], self.qmid[i+7],  self.soft_limit_start[i+7], self.soft_limit_end[i+7], self.soft_limit_range[i+7]
-            a = np.abs(qi - qm)
-            if a < qsls:
-                x[i] = 0
-            elif a < qsle and a > qsls:
-                x[i] = np.round(np.abs(a-qsls) / qslr , 4)
-            else:
-                x[i] = 1
+    #     x = np.zeros(qdot.shape[0])
+    #     for i in range(len(x)):
+    #         qi, qm, qsls, qsle, qslr = q[i], self.qmid[i+7],  self.soft_limit_start[i+7], self.soft_limit_end[i+7], self.soft_limit_range[i+7]
+    #         a = np.abs(qi - qm)
+    #         if a < qsls:
+    #             x[i] = 0
+    #         elif a < qsle and a > qsls:
+    #             x[i] = np.round(np.abs(a-qsls) / qslr , 4)
+    #         else:
+    #             x[i] = 1
 
-        weights = CalcFuncs.weight_vector(x, steepness)
-        qdot_repulsive = - weights.max() * qdot
+    #     weights = CalcFuncs.weight_vector(x, steepness)
+    #     qdot_repulsive = - weights.max() * qdot
 
-        return qdot_repulsive, weights.max()
+    #     return qdot_repulsive, weights.max()
 
 
     def task_drift_compensation(self,  gain_p = 5, gain_d = 0.5, on_taskspace=True) -> np.ndarray:
