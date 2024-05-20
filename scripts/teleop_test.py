@@ -16,7 +16,7 @@ class BMCP:
     CONTROL_RATE = 50
     TWIST_GAIN = [0.1, 0.1]
     DRIFT_GAIN = {
-        'p': [4,4,4,8,8,8],
+        'p': [2,2,2,4,4,4],
         'd': 0.8
     }
 
@@ -142,7 +142,6 @@ class BMCP:
                     
             else:
                 
-                # TODO: refactor this part to be more modular
                 if joy_msg[1][4]:  # left bumper
                     if joy_msg[0][5] != 1:
                         qdot[7:] = self.controller.process_arm_movement(side='r', 
