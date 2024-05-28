@@ -12,12 +12,12 @@ from bimanual_controller.pr2_controller import PR2Controller
 class BMCP:
 
     DAMPER_STEEPNESS = 5
-    MANIP_THRESH = 0.05
+    MANIP_THRESH = 0.07
     CONTROL_RATE = 50
     TWIST_GAIN = [0.1, 0.1]
     DRIFT_GAIN = {
         'p': [2,2,2,8,8,8],
-        'd': 0.8
+        'd': [1,1,1,2,2,2]
     }
 
 

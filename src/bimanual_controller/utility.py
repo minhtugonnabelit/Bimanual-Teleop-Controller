@@ -572,15 +572,18 @@ class FakePR2:
         for i in range(len(x)):
             qi, qm, qsls, qsle, qslr = q[i], self.qmid[i],  self.soft_limit_start[i], self.soft_limit_end[i], self.soft_limit_range[i]
             a = np.abs(qi - qm)
-            if a < qsls:
-                x[i] = 0
-            elif a < qsle and a > qsls:
-                x[i] = np.round(np.abs(a-qsls) / qslr , 4)
-            else:
-                x[i] = 1
+            x[i] = np.round((a-qsls) / qslr , 4)
+            # if a < qsls:
+            #     x[i] = 0
+            # elif a < qsle and a > qsls:
+            #     x[i] = np.round(np.abs(a-qsls) / qslr , 4)
+            # else:
+            #     x[i] = 1
+            # print(x[i])
 
         weights = CalcFuncs.weight_vector(x, steepness)
         qdot_repulsive = - weights.max() * qdot
+        print(weights.max(), np.where(weights == weights.max())[0])
 
         return qdot_repulsive, weights.max(), np.where(weights == weights.max())[0]
     
@@ -862,9 +865,13 @@ def plot_manip_and_drift(constraint_distance: float,
     Returns:
     - The figure and axes objects.
     """
+    plt.rcParams['text.usetex'] = True
+    plt.rcParams.update({'font.size': 10})  # Adjust font size smaller if necessary
+    plt.rcParams['figure.facecolor'] = 'white'
+
 
     # Prepare data
-    fig, ax = plt.subplots(3, 2, figsize=(18, 8))
+    fig, ax = plt.subplots(3, 2, figsize=(15, 20))
     time_space = np.linspace(0, len(drift) * dt, len(drift))
     manip_axes = ax[0, 0]
     drift_axes = ax[0, 1]
@@ -873,9 +880,10 @@ def plot_manip_and_drift(constraint_distance: float,
     joint_pos_axes = ax[1, :]
     joint_vel_axes = ax[2, :]
 
+    plt.subplots_adjust(left=0.1, right=0.9, top=0.85, bottom=0.15, hspace=0.5, wspace=0.2)  # Adjust horizontal spacing
     joint_limits = {
         'left': [joint_limits[0][:7], joint_limits[1][:7]],
-        'right': [joint_limits[0][7:], joint_limits[1][7:]]
+        'right': [joint_limits[0][7:], joint_limits[1][7:]]     
     }
 
     # Plot joint positions
@@ -885,11 +893,18 @@ def plot_manip_and_drift(constraint_distance: float,
                                  * dt, len(joint_positions['l']) + 1)
 
     for i, side in enumerate(['left', 'right']):
-        for j in range(7):  # Assuming there are 7 joints
-            joint_data = np.array([d[j] for d in joint_positions[i]])
-            joint_pos_axes[i].plot(time_space, joint_data, label=f'Joint {j+1}')
-            joint_pos_axes[i].axhline(y=joint_limits[side][0][j], color='r', linestyle='--')  # Lower limit
-            joint_pos_axes[i].axhline(y=joint_limits[side][1][j], color='g', linestyle='--')  # Upper limit
+        # for j in range(7):  # Assuming there are 7 joints
+        #     joint_data = np.array([d[j] for d in joint_positions[i]])
+        #     joint_pos_axes[i].plot(time_space, joint_data, label=f'Joint {j+1}')
+        #     joint_pos_axes[i].axhline(y=joint_limits[side][0][j], color='r', linestyle='--')  # Lower limit
+        #     joint_pos_axes[i].axhline(y=joint_limits[side][1][j], color='g', linestyle='--')  # Upper limit
+
+        joint_data = np.array([d[5] for d in joint_positions[i]])
+        joint_pos_axes[i].plot(time_space, joint_data, label=f'Joint {5+1}')
+        joint_pos_axes[i].axhline(y=joint_limits[side][0][5], color='r', linestyle='--')  # Lower limit
+        joint_pos_axes[i].axhline(y=joint_limits[side][1][5], color='g', linestyle='--')  # Upper limit
+        joint_pos_axes[i].set_xlabel('Time [s]')
+        joint_pos_axes[i].set_ylabel('Joint Position [rad]')
         joint_pos_axes[i].set_title(f'{side.capitalize()} Arm Joint Positions')
         joint_pos_axes[i].legend()
 
@@ -899,6 +914,8 @@ def plot_manip_and_drift(constraint_distance: float,
             joint_data = np.array([d[j] for d in joint_velocities[side]])
             joint_vel_axes[i].plot(time_space, joint_data, label=f'Joint {j+1}')
         joint_vel_axes[i].set_title(f'{side.capitalize()} Arm Joint Velocities')
+        joint_vel_axes[i].set_xlabel('Time [s]')
+        joint_vel_axes[i].set_ylabel('Joint Velocity [rad/s]')
         joint_vel_axes[i].legend()
 
     # Plot manipulability data    # Plot drift data
@@ -910,24 +927,26 @@ def plot_manip_and_drift(constraint_distance: float,
         time_space = np.linspace(0, len(manip_l)
                                  * dt, len(manip_l) + 1)
 
-    manip_axes.plot(time_space, manip_l, 'r', linewidth=1)
-    manip_axes.plot(time_space, manip_r, 'b', linewidth=1)
-    manip_axes.set_title('Manipulability graph')
-    manip_axes.set_xlabel('Time')
-    manip_axes.set_ylabel('Manipulability')
-    manip_axes.legend(['Left arm', 'Right arm'])
+    manip_axes.plot(time_space, manip_l, 'r', linewidth=1, label='Left' )
+    manip_axes.plot(time_space, manip_r, 'b', linewidth=1, label='Right')
+    manip_axes.set_title('Manipulability')
+    manip_axes.set_xlabel('Time [s]')
+    manip_axes.set_ylabel(r'$\omega$')
     manip_axes.axhline(y=manipulabity_threshold, color='k',
-                       linewidth=1, linestyle='--')
+                       linewidth=1, linestyle='--', label='Threshold')
 
-    manip_axes.annotate(f'Min Left {np.min(manip_l):.4f}',
+    manip_axes.annotate(f'Min Left {np.min(manip_l):.2f}',
                         xy=(time_space[np.argmin(manip_l)], np.min(manip_l)),
                         xytext=(10, 0), textcoords='offset points',
                         ha='center', va='bottom', color='r')
 
-    manip_axes.annotate(f'Min Right {np.min(manip_r):.4f}',
+    manip_axes.annotate(f'Min Right {np.min(manip_r):.2f}',
                         xy=(time_space[np.argmin(manip_r)], np.min(manip_r)),
                         xytext=(10, -10), textcoords='offset points',
                         ha='center', va='top', color='b')
+    
+    manip_axes.legend()
+
 
     # Plot drift data
     if len(drift) != len(time_space):
@@ -936,26 +955,29 @@ def plot_manip_and_drift(constraint_distance: float,
 
     drift_axes.plot(time_space, drift, 'k', linewidth=1)
     drift_axes.set_title('Drift graph')
-    drift_axes.set_xlabel('Time')
-    drift_axes.set_ylabel('Distance')
-    drift_axes.set_ylim([constraint_distance - 0.2, constraint_distance + 0.2])
-    drift_axes.axhline(y=constraint_distance, color='r', linewidth=1)
+    drift_axes.set_xlabel('Time [s]')
+    drift_axes.set_ylabel('Distance [m]')
+    drift_axes.set_ylim([constraint_distance - 0.05, constraint_distance + 0.05]) 
+    drift_axes.axhline(y=constraint_distance, color='r', linewidth=1, label=f'Constraint = {constraint_distance:.4f}')
+    drift_axes.axhline(y=np.max(drift), color='k', linewidth=1, linestyle='--', label=f'Max drift = {np.max(drift):.4f}')
+    drift_axes.axhline(y=np.min(drift), color='k', linewidth=1, linestyle='--', label=f'Min drift = {np.min(drift):.4f}')
+    drift_axes.legend()
 
-    drift_axes.annotate(f'Constraint {constraint_distance:.4f}',
-                        xy=(time_space[time_space.size//2], constraint_distance),
-                        xytext=(10, 0),
-                        textcoords='offset points',
-                        ha='center', va='bottom', color='r')
+    # drift_axes.annotate(f'Constraint {constraint_distance:.4f}',
+    #                     xy=(time_space[time_space.size//2], constraint_distance),
+    #                     xytext=(10, 0),
+    #                     textcoords='offset points',
+    #                     ha='center', va='bottom', color='r')
 
-    drift_axes.annotate(f'Max {np.max(drift):.4f}',
-                        xy=(time_space[np.argmax(drift)], np.max(drift)),
-                        xytext=(10, 0), textcoords='offset points',
-                        ha='center', va='bottom', color='k')
+    # drift_axes.annotate(f'Max {np.max(drift):.4f}',
+    #                     xy=(time_space[np.argmax(drift)], np.max(drift)),
+    #                     xytext=(10, 0), textcoords='offset points',
+    #                     ha='center', va='bottom', color='k')
 
-    drift_axes.annotate(f'Min {np.min(drift):.4f}',
-                        xy=(time_space[np.argmin(drift)], np.min(drift)),
-                        xytext=(10, -10), textcoords='offset points',
-                        ha='center', va='top', color='k')
+    # drift_axes.annotate(f'Min {np.min(drift):.4f}',
+    #                     xy=(time_space[np.argmin(drift)], np.min(drift)),
+    #                     xytext=(10, -10), textcoords='offset points',
+    #                     ha='center', va='top', color='k')
 
     return fig, ax
 

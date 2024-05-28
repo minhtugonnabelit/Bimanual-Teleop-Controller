@@ -177,10 +177,10 @@ class PR2Controller:
 
         if max_weights > 0.8:
 
-            side = 'right'
+            side = 'left'
             if joint_on_max_limit > 6:
                 joint_on_max_limit -= 7
-                side = 'left'
+                side = 'right'
 
             rumble_freq = (max_weights - 0.8)*3
             self._rumbled = self._joy_pygame.rumble(rumble_freq, 2*rumble_freq, 0)
