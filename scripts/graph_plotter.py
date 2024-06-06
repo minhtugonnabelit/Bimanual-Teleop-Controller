@@ -23,10 +23,6 @@ def f(x, k):
 
     return 1 / (1 + np.exp(-k * (x - 0.5)))
  
-# # Define the function
-# def f(x, K1, a, d_max, b, d_min):
-#     return K1 / (1 + np.exp(a * d_max * (x - b * d_min)))
- 
 # # Define the parameters
 K = 5
  

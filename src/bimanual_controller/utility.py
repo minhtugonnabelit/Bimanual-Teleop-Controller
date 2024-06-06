@@ -189,7 +189,7 @@ class CalcFuncs:
         gain_p: Union[float, ArrayLike] = 1.0, 
         gain_d: Union[float, ArrayLike] = 0.0,
         threshold=0.1, 
-        method="rpy",
+        method='angle-axis',
         dt=0.001
     ):
         """
@@ -233,6 +233,9 @@ class CalcFuncs:
 
         if isinstance(wTep, sm.SE3):
             wTep = wTep.A
+        
+        kp = gain_p * np.eye(6) if smb.isscalar(gain_p) else np.diag(gain_p)
+        kd = gain_d * np.eye(6) if smb.isscalar(gain_d) else np.diag(gain_d)
 
         if method == "rpy":
             # Pose difference
@@ -250,21 +253,7 @@ class CalcFuncs:
         # Calculate the derivative of the error
         d_error = (e - prev_error) / dt
 
-        if smb.isscalar(gain_p):
-            kp = gain_p * np.eye(6)
-        else:
-            kp = np.diag(gain_p)
-
-        if smb.isscalar(gain_d):
-            kd = gain_d * np.eye(6)
-        else:
-            kd = np.diag(gain_d)
-
-        v = kp @ e
-
-        vd = kd @ d_error
-
-        v = v + vd
+        v = kp @ e + kd @ d_error
 
         arrived = True if np.sum(np.abs(e)) < threshold else False
 
@@ -570,20 +559,12 @@ class FakePR2:
         
         x = np.zeros(qdot.shape[0])
         for i in range(len(x)):
-            qi, qm, qsls, qsle, qslr = q[i], self.qmid[i],  self.soft_limit_start[i], self.soft_limit_end[i], self.soft_limit_range[i]
+            qi, qm, qsls, qslr = q[i], self.qmid[i],  self.soft_limit_start[i], self.soft_limit_range[i]
             a = np.abs(qi - qm)
             x[i] = np.round((a-qsls) / qslr , 4)
-            # if a < qsls:
-            #     x[i] = 0
-            # elif a < qsle and a > qsls:
-            #     x[i] = np.round(np.abs(a-qsls) / qslr , 4)
-            # else:
-            #     x[i] = 1
-            # print(x[i])
 
         weights = CalcFuncs.weight_vector(x, steepness)
         qdot_repulsive = - weights.max() * qdot
-        print(weights.max(), np.where(weights == weights.max())[0])
 
         return qdot_repulsive, weights.max(), np.where(weights == weights.max())[0]
     
@@ -600,66 +581,14 @@ class FakePR2:
         
         x = np.zeros(qdot.shape[0])
         for i in range(len(x)):
-            qi, qm, qsls, qsle, qslr = q[i], self.qmid[i+arm_offset],  self.soft_limit_start[i+arm_offset], self.soft_limit_end[i+arm_offset], self.soft_limit_range[i+arm_offset]
+            qi, qm, qsls, qslr = q[i], self.qmid[i+arm_offset],  self.soft_limit_start[i+arm_offset], self.soft_limit_range[i+arm_offset]
             a = np.abs(qi - qm)
-            if a < qsls:
-                x[i] = 0
-            elif a < qsle and a > qsls:
-                x[i] = np.round(np.abs(a-qsls) / qslr , 4)
-            else:
-                x[i] = 1
+            x[i] = np.round((a-qsls) / qslr , 4)
 
         weights = CalcFuncs.weight_vector(x, steepness)
         qdot_repulsive = - weights.max() * qdot
 
         return qdot_repulsive, weights.max(), np.where(weights == weights.max())[0]
-    
-    # def joint_limits_damper_left(self, qdot, dt, steepness=10):
-    #     r"""
-    #     Repulsive potential field for joint limits for both arms
-    #     :param qdot: joint velocities
-    #     :param steepness: steepness of the transition
-    #     :return: repulsive velocity potential field 
-    #     """
-    #     # Get the joint positions for next step
-    #     q = self.get_joint_positions('l') + qdot * dt
-        
-    #     x = np.zeros(qdot.shape[0])
-    #     for i in range(len(x)):
-    #         qi, qm, qsls, qsle, qslr = q[i], self.qmid[i],  self.soft_limit_start[i], self.soft_limit_end[i], self.soft_limit_range[i]
-    #         a = np.abs(qi - qm)
-    #         if a < qsls:
-    #             x[i] = 0
-    #         elif a < qsle and a > qsls:
-    #             x[i] = np.round(np.abs(a-qsls) / qslr , 4)
-    #         else:
-    #             x[i] = 1
-
-    #     weights = CalcFuncs.weight_vector(x, steepness)
-    #     qdot_repulsive = - weights.max() * qdot
-
-    #     return qdot_repulsive, weights.max()
-    
-    # def joint_limits_damper_right(self, qdot, dt, steepness=10):
-
-    #     # Get the joint positions for next step
-    #     q = self.get_joint_positions('r') + qdot * dt
-
-    #     x = np.zeros(qdot.shape[0])
-    #     for i in range(len(x)):
-    #         qi, qm, qsls, qsle, qslr = q[i], self.qmid[i+7],  self.soft_limit_start[i+7], self.soft_limit_end[i+7], self.soft_limit_range[i+7]
-    #         a = np.abs(qi - qm)
-    #         if a < qsls:
-    #             x[i] = 0
-    #         elif a < qsle and a > qsls:
-    #             x[i] = np.round(np.abs(a-qsls) / qslr , 4)
-    #         else:
-    #             x[i] = 1
-
-    #     weights = CalcFuncs.weight_vector(x, steepness)
-    #     qdot_repulsive = - weights.max() * qdot
-
-    #     return qdot_repulsive, weights.max()
 
 
     def task_drift_compensation(self,  gain_p = 5, gain_d = 0.5, on_taskspace=True) -> np.ndarray:
@@ -962,22 +891,6 @@ def plot_manip_and_drift(constraint_distance: float,
     drift_axes.axhline(y=np.max(drift), color='k', linewidth=1, linestyle='--', label=f'Max drift = {np.max(drift):.4f}')
     drift_axes.axhline(y=np.min(drift), color='k', linewidth=1, linestyle='--', label=f'Min drift = {np.min(drift):.4f}')
     drift_axes.legend()
-
-    # drift_axes.annotate(f'Constraint {constraint_distance:.4f}',
-    #                     xy=(time_space[time_space.size//2], constraint_distance),
-    #                     xytext=(10, 0),
-    #                     textcoords='offset points',
-    #                     ha='center', va='bottom', color='r')
-
-    # drift_axes.annotate(f'Max {np.max(drift):.4f}',
-    #                     xy=(time_space[np.argmax(drift)], np.max(drift)),
-    #                     xytext=(10, 0), textcoords='offset points',
-    #                     ha='center', va='bottom', color='k')
-
-    # drift_axes.annotate(f'Min {np.min(drift):.4f}',
-    #                     xy=(time_space[np.argmin(drift)], np.min(drift)),
-    #                     xytext=(10, -10), textcoords='offset points',
-    #                     ha='center', va='top', color='k')
 
     return fig, ax
 

@@ -49,20 +49,6 @@ class PR2Controller:
         self._joystick_sub = rospy.Subscriber(
             '/joy', Joy, self.__joystick_callback)
 
-        # self._hydra_joy_msg = {
-        #     'l': None,
-        #     'r': None
-        # }
-        # self._hydra_joy_sub = {
-        #     'l': rospy.Subscriber('/hydra_left_joy', Joy, self.__hydra_joystick_callback, callback_args='l'),
-        #     'r': rospy.Subscriber('/hydra_right_joy', Joy, self.__hydra_joystick_callback, callback_args='r')
-        # }
-        # self._hydra_base_frame_id = 'hydra_base'
-        # self._controller_frame_id = {
-        #     'l': 'hydra_left_grab',
-        #     'r': 'hydra_right_grab'
-        # }
-
         self._constraint_distance = 0
         self._constraint_is_set = False
         self._offset_distance = []
@@ -117,34 +103,6 @@ class PR2Controller:
 
     def set_manip_thresh(self, manip_thresh):
         self._manip_thresh = manip_thresh
-
-
-    # Getters
-
-    # def get_hydra_joy_msg(self, side: str):
-    #     return self._hydra_joy_msg[side]
-
-    # def get_twist(self, side: str, synced=False, gain=[1, 1]):
-
-    #     try:
-    #         self._tf_listener.waitForTransform(
-    #             self._controller_frame_id[side], self._hydra_base_frame_id, rospy.Time(), rospy.Duration(20))
-    #         synced = True
-    #     except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
-    #         rospy.logwarn("Waiting for tf")
-    #         synced = False
-
-    #     if not synced:
-    #         return None, synced
-
-    #     twist = self._tf_listener.lookupTwist(
-    #         self._controller_frame_id[side], self._hydra_base_frame_id, rospy.Time(), rospy.Duration(1/CONTROL_RATE)) if synced else None
-
-    #     xdot = np.zeros(6)
-    #     xdot[:3] = np.array(twist[0]) * gain[0]
-    #     xdot[3:] = np.array(twist[1]) * gain[1]
-
-    #     return xdot, synced
 
     def get_arm_controller(self, side: str):
         return self._right_arm if side == 'r' else self._left_arm
@@ -205,20 +163,6 @@ class PR2Controller:
         else:
             self._joy_pygame.stop_rumble() if self._rumbled else None
             self._rumbled = False
-
-        return joint_limits_damper
-
-    def joint_limit_damper_right(self, qdot, steepness=10) -> list:
-
-        joint_limits_damper, _ = self._virtual_robot.joint_limits_damper_right(
-            qdot, self._dt, steepness)
-
-        return joint_limits_damper 
-    
-    def joint_limit_damper_left(self, qdot, steepness=10) -> list:
-
-        joint_limits_damper, _ = self._virtual_robot.joint_limits_damper_left(
-            qdot, self._dt, steepness)
 
         return joint_limits_damper
 
