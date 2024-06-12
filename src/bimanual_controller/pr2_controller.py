@@ -133,7 +133,7 @@ class PR2Controller:
             rumble_freq = (max_weights - 0.8)*3
             self._rumbled = self._joystick.start_rumble(rumble_freq, 2*rumble_freq, 0)
             rospy.logwarn(
-                f"\nJoint limit avoidance mechanism is applied with max weight: {max_weights:.2f} at joint {JOINT_NAMES[side][joint_on_max_limit[0]]}")
+                f"\nJoint limit avoidance mechanism is applied with max weight: {max_weights:.2f} at joint {self._JOINT_NAMES[side][joint_on_max_limit[0]]}")
         else :
             self._joystick.stop_rumble() if self._rumbled else None
             self._rumbled = False
@@ -149,7 +149,7 @@ class PR2Controller:
             rumble_freq = (max_weights - 0.8)*3
             self._rumbled = self._joystick.start_rumble(rumble_freq, 2*rumble_freq, 0)
             rospy.logwarn(
-                f"\nJoint limit avoidance mechanism is applied with max weight: {max_weights:.2f} at joint {JOINT_NAMES[side][joint_on_max_limit[0]]}")
+                f"\nJoint limit avoidance mechanism is applied with max weight: {max_weights:.2f} at joint {self._JOINT_NAMES[side][joint_on_max_limit[0]]}")
         else:
             self._joystick.stop_rumble() if self._rumbled else None
             self._rumbled = False
