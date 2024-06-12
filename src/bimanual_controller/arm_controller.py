@@ -85,13 +85,13 @@ class ArmController:
     def gripper_state_callback(self, data : JointControllerState):
         self._gripper_state = data.process_value
 
-    def move_to_neutral(self):
+    def move_to_neutral(self, state):
         goal = FollowJointTrajectoryGoal()
         goal.trajectory = ROSUtils.create_joint_traj_msg(
             self._joint_names,
             2,
             self._robot_base_frame,
-            q=SAMPLE_STATES[self._name])
+            q=state)
         
         self._client.send_goal(goal)
         return self._client.wait_for_result()

@@ -9,27 +9,33 @@ from pr2_controllers_msgs.msg import Pr2GripperCommand
 
 import numpy as np
 from bimanual_controller.utility import *
+from bimanual_controller.fake_pr2 import FakePR2
 from bimanual_controller.arm_controller import ArmController
+from bimanual_controller.joystick_controller import JoystickController
 
 
 class PR2Controller:
 
-    def __init__(self, name, log_level, rate):
+    def __init__(self, rate, joystick : JoystickController, config):
 
-        rospy.init_node(name, log_level=log_level, anonymous=True)
         self._virtual_robot = FakePR2(control_rate=rate,launch_visualizer=False)
         self._rate = rospy.Rate(rate)
         self._dt = 1/rate
+
+        self._cfg = config
+        self._JOINT_NAMES = self._cfg['JOINT_NAMES']
+
+        self._joystick = joystick
         self._robot_base_frame = 'base_footprint'
         self._right_arm = ArmController(arm='r',
-                                       arm_group_joint_names=JOINT_NAMES['right'],
+                                       arm_group_joint_names=self._JOINT_NAMES['right'],
                                        arm_group_controller_name="/r_arm_joint_group_velocity_controller",
                                        controller_cmd_type=Float64MultiArray,
                                        gripper_cmd_type=Pr2GripperCommand,
                                        robot_base_frame=self._robot_base_frame)
 
         self._left_arm = ArmController(arm='l',
-                                      arm_group_joint_names=JOINT_NAMES['left'],
+                                      arm_group_joint_names=self._JOINT_NAMES['left'],
                                       arm_group_controller_name="/l_arm_joint_group_velocity_controller",
                                       controller_cmd_type=Float64MultiArray,
                                       gripper_cmd_type=Pr2GripperCommand,
@@ -41,13 +47,6 @@ class PR2Controller:
         self._joint_states = None
         self._joint_state_sub = rospy.Subscriber(
             '/joint_states', JointState, self.__joint_state_callback)
-
-        joy = rospy.wait_for_message('/joy', Joy)
-        self._joy_msg = (joy.axes, joy.buttons)
-        self._joy_pygame = joy_init()
-        self._rumbled = False
-        self._joystick_sub = rospy.Subscriber(
-            '/joy', Joy, self.__joystick_callback)
 
         self._constraint_distance = 0
         self._constraint_is_set = False
@@ -70,7 +69,7 @@ class PR2Controller:
         self._virtual_robot.shutdown()
         rospy.loginfo('Shutting down the virtual robot')
         if self._rumbled:
-            self._joy_pygame.stop_rumble()
+            self._joystick.stop_rumble()
         PR2Controller.kill_jg_vel_controller()
 
         joint_limits = self._virtual_robot.get_joint_limits_all()
@@ -121,15 +120,6 @@ class PR2Controller:
 
 
     def joint_limit_damper(self, qdot, steepness=10) -> list:
-        r"""
-        joint limit avoidance mechanism with speed scaling factor 
-
-        Args:
-            qdot (list): Joint velocities
-
-        Returns:
-            list: Joint velocities with joint limit avoidance mechanism applied
-        """
         joint_limits_damper, max_weights, joint_on_max_limit = self._virtual_robot.joint_limits_damper(
             qdot, self._dt, steepness)
 
@@ -141,11 +131,11 @@ class PR2Controller:
                 side = 'right'
 
             rumble_freq = (max_weights - 0.8)*3
-            self._rumbled = self._joy_pygame.rumble(rumble_freq, 2*rumble_freq, 0)
+            self._rumbled = self._joystick.start_rumble(rumble_freq, 2*rumble_freq, 0)
             rospy.logwarn(
                 f"\nJoint limit avoidance mechanism is applied with max weight: {max_weights:.2f} at joint {JOINT_NAMES[side][joint_on_max_limit[0]]}")
         else :
-            self._joy_pygame.stop_rumble() if self._rumbled else None
+            self._joystick.stop_rumble() if self._rumbled else None
             self._rumbled = False
         return joint_limits_damper
 
@@ -157,33 +147,22 @@ class PR2Controller:
         if max_weights > 0.8:
             side = 'left' if side == 'l' else 'right'
             rumble_freq = (max_weights - 0.8)*3
-            self._rumbled = self._joy_pygame.rumble(rumble_freq, 2*rumble_freq, 0)
+            self._rumbled = self._joystick.start_rumble(rumble_freq, 2*rumble_freq, 0)
             rospy.logwarn(
                 f"\nJoint limit avoidance mechanism is applied with max weight: {max_weights:.2f} at joint {JOINT_NAMES[side][joint_on_max_limit[0]]}")
         else:
-            self._joy_pygame.stop_rumble() if self._rumbled else None
+            self._joystick.stop_rumble() if self._rumbled else None
             self._rumbled = False
 
         return joint_limits_damper
 
     def task_drift_compensation(self, gain_p=5, gain_d=0.5, on_taskspace=True):
-        r"""
-        Task drift compensator mechanism 
-
-        Args:
-            gain (int, optional): Gain of the RMRC. Defaults to 5.
-            taskspace_compensation (bool, optional): Flag to indicate if the compensation is in task space. Defaults to True.
-
-        Returns:
-            list: Joint velocities with task drift compensation mechanism applied
-        """
-
         return self._virtual_robot.task_drift_compensation(gain_p, gain_d, on_taskspace)
 
 
     def move_to_neutral(self):
-        result_r = self._right_arm.move_to_neutral()
-        result_l = self._left_arm.move_to_neutral()
+        result_r = self._right_arm.move_to_neutral(self._cfg['SAMPLE_STATES'][self._right_arm.get_arm_name()])
+        result_l = self._left_arm.move_to_neutral(self._cfg['SAMPLE_STATES'][self._left_arm.get_arm_name()])
         return result_l
 
     def move_base(self, twist):
@@ -215,22 +194,6 @@ class PR2Controller:
         qdot = CalcFuncs.rmrc(jacob, twist, w_thresh=manip_thresh)
 
         return qdot, twist, jacob
-
-
-    #  TODO: Implement the following methods as separate class for the joystick
-    def __joystick_callback(self, msg: Joy):
-        self._joy_msg = (msg.axes, msg.buttons)
-
-    def get_joy_msg(self):
-        return self._joy_msg
-
-    def rumble_joy(self, freq, duration):
-        self._rumbled = self._joy_pygame.rumble(freq, duration, 0)
-    
-    def rumble_stop(self):
-        self._joy_pygame.stop_rumble() if self._rumbled else None
-        self._rumbled = False
-    
 
     @ staticmethod
     def start_jg_vel_controller():
@@ -273,9 +236,6 @@ class PR2Controller:
     def __joint_state_callback(self, msg: JointState):
         self._joint_states = msg
         self._virtual_robot.set_states(self._joint_states.position)
-
-    # def __hydra_joystick_callback(self, msg: Joy, side: str):
-    #     self._hydra_joy_msg[side] = (msg.axes, msg.buttons)
 
     def store_constraint_distance(self, distance: float):
         self._constraint_distance = distance
