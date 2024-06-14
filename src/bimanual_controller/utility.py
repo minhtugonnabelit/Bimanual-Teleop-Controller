@@ -594,11 +594,18 @@ class FakePR2:
     def task_drift_compensation(self,  gain_p = 5, gain_d = 0.5, on_taskspace=True) -> np.ndarray:
         r"""
         Get the drift compensation for the robot
-        :return: drift compensation velocities as joint velocities
+        @param gain_p: proportional gain
+        @param gain_d: derivative gain
+        @param on_taskspace: if True, return the drift compensation in the task space, otherwise in the joint space
+        
+        :return: drift compensation velocities component
         """
+
+        left_arm_pose = self.get_tool_pose('l', offset=True)
+        right_arm_pose = self.get_tool_pose('r', offset=True)
     
-        v, _, self._drift_error = CalcFuncs.pd_servo(self.get_tool_pose(side='l', offset=True),
-                                                    self.get_tool_pose(side='r', offset=True),
+        v, _, self._drift_error = CalcFuncs.pd_servo(left_arm_pose,
+                                                    right_arm_pose,
                                                     self._drift_error,
                                                     gain_p=gain_p,
                                                     gain_d=gain_d,
