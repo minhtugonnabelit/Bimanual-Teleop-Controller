@@ -21,15 +21,15 @@ class BMCP:
     #     'd': [1,1,1,2,2,2]
     # }
 
+    _DAMPER_STEEPNESS = config['DAMPER_STEEPNESS']
+    _MANIP_THRESH = config['MANIPULABILITY_THRESHOLD']
+    _CONTROL_RATE = config['CONTROL_RATE']
+    _TWIST_GAIN = config['TWIST_GAIN']
+    _DRIFT_GAIN = config['DRIFT_GAIN']
+
     def __init__(self, config) -> None:
         
         rospy.init_node('bimanual_controller', log_level=2, anonymous=True)
-        self._config = config
-        self._DAMPER_STEEPNESS = config['DAMPER_STEEPNESS']
-        self._MANIP_THRESH = config['MANIPULABILITY_THRESHOLD']
-        self._CONTROL_RATE = config['CONTROL_RATE']
-        self._TWIST_GAIN = config['TWIST_GAIN']
-        self._DRIFT_GAIN = config['DRIFT_GAIN']
 
         self.joystick = JoystickController()
         self.controller = PR2Controller(rate=BMCP._CONTROL_RATE, joystick=self.joystick, config=config)
@@ -130,6 +130,18 @@ class BMCP:
                     # Calculate the joint velocities using RMRC
                     qdot_right = CalcFuncs.rmrc(jacob_right, twist_right, w_thresh=BMCP._MANIP_THRESH)
                     qdot_left = CalcFuncs.rmrc(jacob_left, twist_left,  w_thresh=BMCP._MANIP_THRESH)
+                    # qdot_right = self.controller.process_arm_movement(side='r', 
+                    #                                                   twist=twist, 
+                    #                                                   manip_thresh=BMCP._MANIP_THRESH, 
+                    #                                                   joint_limit_damper=False,
+                    #                                                   damper_steepness=BMCP._DAMPER_STEEPNESS, 
+                    #                                                   twist_in_ee=True)
+                    # qdot_left = self.controller.process_arm_movement(side='l', 
+                    #                                                  twist=twist, 
+                    #                                                  manip_thresh=BMCP._MANIP_THRESH, 
+                    #                                                  joint_limit_damper=False,
+                    #                                                  damper_steepness=BMCP._DAMPER_STEEPNESS, 
+                    #                                                  twist_in_ee=True)
                     qdot_combined = np.r_[qdot_left, qdot_right]
 
                     # Perform nullspace projection for qdot_combined on constraint Jacobian to ensure the twist synchronisatio
@@ -143,12 +155,12 @@ class BMCP:
                     qdot = primary_tasks_vel + secondary_tasks_vel
 
                     # Add a joint limits damper to the joint velocities
-                    qdot += self.controller.joint_limit_damper(qdot_combined, steepness=BMCP._DAMPER_STEEPNESS)
+                    qdot += self.controller.joint_limit_damper(qdot, steepness=BMCP._DAMPER_STEEPNESS)
                     
             else:
                 
                 if joy_msg[1][4]:  # left bumper
-                    if joy_msg[0][5] != 1:
+                    if joy_msg[0][5] != 1:  
                         qdot[7:] = self.controller.process_arm_movement(side='r', 
                                                                         twist=twist, 
                                                                         manip_thresh=BMCP._MANIP_THRESH, 
@@ -413,7 +425,9 @@ class BMCP:
 
 if __name__ == "__main__":
     try:
-        b = BMCP(config=Config.load_config('config/bmcp_cfg.yaml'))
+        # cfg_path = rospkg.RosPack().get_path('bimanual_teleop_controller') + '/config/bmcp_cfg.yaml'
+        # config = Config.load_config(cfg_path)
+        b = BMCP(config=config)
         b.teleop_test()
     except rospy.ROSInterruptException:
         pass

@@ -38,7 +38,6 @@ class FakePR2:
             }
         }
 
-
         # Get the joint limits and form the symmetric soft limits
         qmin, qmax = self.get_joint_limits_all()
         self.qmid = (qmin + qmax) / 2
@@ -82,6 +81,7 @@ class FakePR2:
         Timeline function to update the visualization
         :return: None
         """
+
         while not self._is_collapsed:
             self._env.step(1/self._control_rate)
 
@@ -105,6 +105,7 @@ class FakePR2:
         :param joint_states: list of joint states
         :return: None
         """
+
         if real_robot:
             right_js = CalcFuncs.reorder_values(joint_states[17:24])
             left_js = CalcFuncs.reorder_values(joint_states[31:38])
@@ -114,7 +115,6 @@ class FakePR2:
 
         self._robot.q[16:23] = right_js
         self._robot.q[23:30] = left_js
-        self.q = deepcopy(self._robot.q)
 
         if self._launch_visualizer:
 
@@ -131,6 +131,7 @@ class FakePR2:
 
         :return: tool pose
         """
+
         tool = self._tool_offset[side] if offset else np.eye(4)
 
         return self._robot.fkine(self._robot.q, end=self._arms_frame[side]['end'], tool=tool).A
@@ -140,6 +141,7 @@ class FakePR2:
         Get the joint states of the robot
         :return: joint states
         """
+
         if side == 'l':
             return self._robot.q[23:30]
         else:
@@ -151,6 +153,7 @@ class FakePR2:
         :param side: side of the robot
         :return: joint limits
         """
+
         return self._robot.qlim[0][16:23] if side == 'r' else self._robot.qlim[0][23:30], self._robot.qlim[1][16:23] if side == 'r' else self._robot.qlim[1][23:30]
         
     def get_joint_limits_all(self):
@@ -168,17 +171,60 @@ class FakePR2:
 
         return qmin, qmax
 
-    def get_jacobian(self, side):
+    def get_jacobian(self, side, q = None):
         r"""
         Get the Jacobian of the robot on the tool frame
         :param side: side of the robot
 
         :return: Jacobian
         """
-        return self._robot.jacobe(self._robot.q, end=self._arms_frame[side]['end'], start=self._arms_frame[side]['start'], tool=self._tool_offset[side])
+
+        if q is None:
+            q = self._robot.q.copy()
+        return self._robot.jacobe(q, end=self._arms_frame[side]['end'], start=self._arms_frame[side]['start'], tool=self._tool_offset[side])
+    
+    def manipulability_gradient(self, side, eps = 1e-3):
+        r"""
+        Get the manipulability gradient of the robot - numerical differentiation.
+        Please note that this function is computationally expensive
+
+        :param side: side of the robot
+        :param eps: epsilon value for numerical differentiation
+
+        :return: manipulability gradient
+        """
+
+        start_index = 23 if side == 'l' else 16
+        manip_grad = np.zeros(7)
+        for i in range(len(manip_grad)):
+
+            q_up = self._robot.q.copy()
+            q_up[start_index + i] += eps
+            j_up = self.get_jacobian(side, q_up)
+            m_up = CalcFuncs.manipulability(j_up)
+
+            q_low = self._robot.q.copy()
+            q_low[start_index + i] -= eps
+            j_low = self.get_jacobian(side, q_low)
+            m_low = CalcFuncs.manipulability(j_low) 
+
+            manip_grad[i] = (m_up - m_low) / (2 * eps)
+
+        return manip_grad
+
 
     def get_twist_in_tool_frame(self, side, twist):
-                        
+        r"""
+        Get the twist in the tool frame by 
+        converting the twist in the base frame 
+        to the tool frame using adjoint matrix
+        
+        :param side: side of the robot
+        :param twist: twist in the base frame
+
+        :return: twist in the tool frame
+        """
+
         tool = self.get_tool_pose(side) 
         twist_converted= CalcFuncs.adjoint(np.linalg.inv(tool)) @ twist
 
@@ -191,6 +237,7 @@ class FakePR2:
         :param steepness: steepness of the transition
         :return: repulsive velocity potential field 
         """
+
         # Get the joint positions for next step
         q = np.r_[self.get_joint_positions(
             'l'), self.get_joint_positions('r')] + qdot * dt
@@ -261,3 +308,4 @@ class FakePR2:
             self._is_collapsed = True
             self._thread.join()
         return True
+

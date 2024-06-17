@@ -1,22 +1,16 @@
-from typing import Union
+# !/usr/bin/env python3
 
 import numpy as np
-
-import pygame
-import sys
 import yaml
 import matplotlib.pyplot as plt
 
-import rospy
+import rospy, rospkg
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 from bimanual_controller.math_utils import CalcFuncs
 
+from typing import Union
 ArrayLike = Union[list, np.ndarray, tuple, set]
-
-# SAMPLE_STATES = {
-#     'r': np.deg2rad([-40, 30, -90, -91, -31, -39, 91]),
-#     'l': np.deg2rad([39, 27, 91, -92, 31, -38, 85])}
 
 class Config:
     @classmethod
@@ -27,8 +21,9 @@ class Config:
             except yaml.YAMLError as exc:
                 print(exc)
         return config
-    
-config = Config.load_config('config/bmcp_cfg.yaml')
+
+cfg_path = rospkg.RosPack().get_path('bimanual_teleop_controller') + '/config/bmcp_cfg.yaml'
+config = Config.load_config(cfg_path)
 
 class AnimateFuncs:
 
@@ -214,21 +209,35 @@ def plot_manip_and_drift(constraint_distance: float,
     if len(joint_positions[0]) != len(time_space):
         time_space = np.linspace(0, len(joint_positions['l'])
                                  * dt, len(joint_positions['l']) + 1)
+        
+    joint_accelerations = {
+        'left': np.diff(joint_velocities['left'], axis=0) / dt,
+        'right': np.diff(joint_velocities['right'], axis=0) / dt
+    }
+
+    # for i, side in enumerate(['left', 'right']):
+    #     # for j in range(7):  # Assuming there are 7 joints
+    #     #     joint_data = np.array([d[j] for d in joint_positions[i]])
+    #     #     joint_pos_axes[i].plot(time_space, joint_data, label=f'Joint {j+1}')
+    #     #     joint_pos_axes[i].axhline(y=joint_limits[side][0][j], color='r', linestyle='--')  # Lower limit
+    #     #     joint_pos_axes[i].axhline(y=joint_limits[side][1][j], color='g', linestyle='--')  # Upper limit
+
+    #     joint_data = np.array([d[5] for d in joint_positions[i]])
+    #     joint_pos_axes[i].plot(time_space, joint_data, label=f'Joint {5+1}')
+    #     joint_pos_axes[i].axhline(y=joint_limits[side][0][5], color='r', linestyle='--')  # Lower limit
+    #     joint_pos_axes[i].axhline(y=joint_limits[side][1][5], color='g', linestyle='--')  # Upper limit
+    #     joint_pos_axes[i].set_xlabel('Time [s]')
+    #     joint_pos_axes[i].set_ylabel('Joint Position [rad]')
+    #     joint_pos_axes[i].set_title(f'{side.capitalize()} Arm Joint Positions')
+    #     joint_pos_axes[i].legend()
 
     for i, side in enumerate(['left', 'right']):
-        # for j in range(7):  # Assuming there are 7 joints
-        #     joint_data = np.array([d[j] for d in joint_positions[i]])
-        #     joint_pos_axes[i].plot(time_space, joint_data, label=f'Joint {j+1}')
-        #     joint_pos_axes[i].axhline(y=joint_limits[side][0][j], color='r', linestyle='--')  # Lower limit
-        #     joint_pos_axes[i].axhline(y=joint_limits[side][1][j], color='g', linestyle='--')  # Upper limit
-
-        joint_data = np.array([d[5] for d in joint_positions[i]])
-        joint_pos_axes[i].plot(time_space, joint_data, label=f'Joint {5+1}')
-        joint_pos_axes[i].axhline(y=joint_limits[side][0][5], color='r', linestyle='--')  # Lower limit
-        joint_pos_axes[i].axhline(y=joint_limits[side][1][5], color='g', linestyle='--')  # Upper limit
+        for j in range(7):  # Assuming there are 7 joints
+            joint_data = joint_accelerations[side][:, j]
+            joint_pos_axes[i].plot(time_space[:-1], joint_data, label=f'Joint {j+1}')  # Use time_space[:-1] because np.diff reduces the length by 1
+        joint_pos_axes[i].set_title(f'{side.capitalize()} Arm Joint Accelerations')
         joint_pos_axes[i].set_xlabel('Time [s]')
-        joint_pos_axes[i].set_ylabel('Joint Position [rad]')
-        joint_pos_axes[i].set_title(f'{side.capitalize()} Arm Joint Positions')
+        joint_pos_axes[i].set_ylabel(r'Joint Acceleration [$rad/s^2$]')
         joint_pos_axes[i].legend()
 
     # Plot joint velocities

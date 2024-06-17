@@ -28,13 +28,13 @@ class ArmController:
         self._joint_names = arm_group_joint_names
         self._gripper_cmd_type = gripper_cmd_type
         self._robot_base_frame = robot_base_frame
-        joint_controller_name = arm_group_controller_name + "/command"
-        gripper_controller_name = arm + '_gripper_controller/command'
+        # joint_controller_name = 
+        # gripper_controller_name = arm + '_gripper_controller/command'
 
         self._joint_controller_pub = rospy.Publisher(
-            joint_controller_name, controller_cmd_type, queue_size=10)
+            arm_group_controller_name + "/command", controller_cmd_type, queue_size=10)
         self._gripper_controller_pub = rospy.Publisher(
-            gripper_controller_name, gripper_cmd_type, queue_size=1) 
+            arm + '_gripper_controller/command', gripper_cmd_type, queue_size=1) 
         self._client = actionlib.SimpleActionClient(
             '/' + arm + '_arm_controller/follow_joint_trajectory',
             FollowJointTrajectoryAction)

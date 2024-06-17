@@ -15,6 +15,16 @@ class CalcFuncs:
     
     @staticmethod    
     def adjoint(T):
+        r"""
+        Adjoint transformation matrix.
+
+        :param T: A 4x4 homogeneous transformation matrix
+        :type T: np.ndarray
+
+        :return: The adjoint transformation matrix
+        :rtype: np.ndarray
+
+        """
 
         R = T[:3, :3]
         p = T[:3, -1]
@@ -28,14 +38,39 @@ class CalcFuncs:
 
     @staticmethod    
     def manipulability(jacob):
+        r"""
+        Calculate the manipulability of the robot.
+        
+        :param jacob: The Jacobian matrix of the robot
+        :type jacob: np.ndarray
+
+        :return: The manipulability of the robot
+        :rtype: float
+
+        """
         return np.sqrt(np.linalg.det(jacob @ np.transpose(jacob)))
     
     @staticmethod    
     def rmrc(jacob, twist, w_thresh=0.08):
+        """
+        Description of what the function does.
+
+        Parameters
+        ----------
+        jacob : np.ndarray
+            Jacobian matrix of the robot.
+        twist : list
+            The twist of the robot.
+        
+        Returns
+        -------
+        list 
+            The joint velocities of the robot.
+
+        """
         w = CalcFuncs.manipulability(jacob)
 
         max_damp = 1
-        # damp = (1 - np.power(w/w_thresh, 2)) * max_damp if w < w_thresh else 0
         damp = np.power(1 - w/w_thresh, 2) * max_damp if w < w_thresh else 0
 
         j_dls = np.transpose(jacob) @ np.linalg.inv(jacob @
@@ -45,7 +80,28 @@ class CalcFuncs:
         return qdot
     
     @staticmethod
+    def world_twist_to_qdot(ee_pose : np.ndarray, twist : list, jacob : np.ndarray, manip_thresh) -> list:
+        adjoint = CalcFuncs.adjoint(np.linalg.inv(ee_pose))
+        twist = adjoint @ twist
+        qdot = CalcFuncs.rmrc(jacob, twist, w_thresh=manip_thresh)
+
+        return qdot, twist
+
+    @staticmethod
     def nullspace_projector(m):
+        r"""
+        Calculate the nullspace projector of the matrix.
+        
+        Parameters
+        ----------
+        m : np.ndarray
+            The matrix to calculate the nullspace projector.
+
+        Returns
+        -------
+        np.ndarray
+            The nullspace projector of the matrix.
+        """
         return np.eye(m.shape[1]) - np.linalg.pinv(m) @ m
     
     @staticmethod
@@ -68,6 +124,22 @@ class CalcFuncs:
     
     @staticmethod
     def angle_axis_python(T, Td):
+        r"""
+        Calculate the error between two poses using the angle-axis representation.
+        
+        Parameters
+        ----------
+        T : np.ndarray
+            The current pose of the robot.
+        Td : np.ndarray
+            The desired pose of the robot.
+
+        Returns
+        -------
+        np.ndarray
+            The error between the two poses.
+
+        """
         e = np.empty(6)
         e[:3] = Td[:3, -1] - T[:3, -1]
         R = Td[:3, :3] @ T[:3, :3].T
@@ -101,11 +173,36 @@ class CalcFuncs:
         method='angle-axis',
         dt=0.001
     ):
-        """
+        r"""
         Position-based servoing.
 
-        Returns the end-effector velocity which will cause the robot to approach
-        the desired pose.
+        Parameters
+        ----------
+        wTe : np.ndarray
+            The current end effector pose of the robot.
+        wTep : np.ndarray
+            The desired end effector pose of the robot.
+        prev_error : np.ndarray
+            The previous error of the end effector pose in time interval dt.
+        gain_p : Union[float, ArrayLike], optional
+            The proportional gain of the robot, by default 1.0.
+        gain_d : Union[float, ArrayLike], optional
+            The derivative gain of the robot, by default 0.0.
+        threshold : float, optional
+            The threshold of the robot, by default 0.1.
+        method : str, optional
+            The method to calculate the error, by default 'angle-axis'.
+        dt : float, optional
+            The time step of the robot, by default 0.001.
+
+        Returns
+        -------
+        np.ndarray
+            The velocity of the robot.
+        bool
+            The arrival status of the robot.
+        np.ndarray
+            The error of the end effector pose.
 
         """
 
