@@ -12,15 +12,6 @@ from bimanual_controller.joystick_controller import JoystickController
 
 class BMCP:
 
-    # DAMPER_STEEPNESS = 5
-    # MANIP_THRESH = 0.07
-    # CONTROL_RATE = 50
-    # TWIST_GAIN = [0.1, 0.1]
-    # DRIFT_GAIN = {
-    #     'p': [2,2,2,8,8,8],
-    #     'd': [1,1,1,2,2,2]
-    # }
-
     _DAMPER_STEEPNESS = config['DAMPER_STEEPNESS']
     _MANIP_THRESH = config['MANIPULABILITY_THRESHOLD']
     _CONTROL_RATE = config['CONTROL_RATE']
@@ -30,9 +21,10 @@ class BMCP:
     def __init__(self, config) -> None:
         
         rospy.init_node('bimanual_controller', log_level=2, anonymous=True)
+        self._data_plot = rospy.get_param('data_plot', False)
 
         self.joystick = JoystickController()
-        self.controller = PR2Controller(rate=BMCP._CONTROL_RATE, joystick=self.joystick, config=config)
+        self.controller = PR2Controller(rate=BMCP._CONTROL_RATE, joystick=self.joystick, config=config, data_plotter=self._data_plot)
         self.controller.set_manip_thresh(BMCP._MANIP_THRESH)
         self.controller.move_to_neutral()
         rospy.loginfo('Robot is in neutral position')
@@ -45,11 +37,9 @@ class BMCP:
         # Control signals and locks
         self._right_arm = self.controller.get_arm_controller('r')
         self._qdot_right = np.zeros(7)
-        # self._qdot_right_lock = threading.Lock()
 
         self._left_arm = self.controller.get_arm_controller('l')
         self._qdot_left = np.zeros(7)
-        # self._qdot_left_lock = threading.Lock()
 
         self._control_signal_ready = threading.Condition()
         self._control_signal_thread = threading.Thread(target=self.control_signal_handler)
@@ -96,8 +86,9 @@ class BMCP:
                 rospy.loginfo('Control signal thread joined.')
                 self._base_controller_thread.join()
                 rospy.loginfo('Base controller thread joined.')
-                self._data_recording_thread.join()
-                rospy.loginfo('Data recording thread joined.')
+                if self._data_plot:
+                    self._data_recording_thread.join()
+                    rospy.loginfo('Data recording thread joined.')
 
                 os.system('rosnode kill /joy')
 
@@ -106,8 +97,9 @@ class BMCP:
             if (joy_msg[1][6] * joy_msg[1][7]) and not constraint_is_set:
 
                 constraint_is_set, _, constraint_distance = self.controller.set_kinematics_constraints()
-                self.controller.store_constraint_distance(constraint_distance)
-                self._data_recording_thread.start()
+                if self._data_plot:
+                    self.controller.store_constraint_distance(constraint_distance)
+                    self._data_recording_thread.start()
                 rospy.loginfo(
                     'Constraint is set, switching controllers, started velocity controller thread')
 
@@ -182,7 +174,6 @@ class BMCP:
             rospy.logdebug(
                 f'Calculation time: {exec_time:.4f}')
 
-            # time.sleep(1/(BMCP.CONTROL_RATE*10))
 
     # def teleop_with_hand_motion(self):
     #     r"""
@@ -414,19 +405,17 @@ class BMCP:
 
             if self._state != 'individual' and self._state != 'Done':
 
-                self.controller.store_joint_velocities(
-                    'right', self._qdot_right)
+                self.controller.store_joint_positions()
+                self.controller.store_joint_efforts()
+                self.controller.store_joint_velocities('right', self._qdot_right)
                 self.controller.store_joint_velocities('left', self._qdot_left)
 
-                self.controller.store_joint_positions()
                 self.controller.store_manipulability()
                 self.controller.store_drift()
 
 
 if __name__ == "__main__":
     try:
-        # cfg_path = rospkg.RosPack().get_path('bimanual_teleop_controller') + '/config/bmcp_cfg.yaml'
-        # config = Config.load_config(cfg_path)
         b = BMCP(config=config)
         b.teleop_test()
     except rospy.ROSInterruptException:

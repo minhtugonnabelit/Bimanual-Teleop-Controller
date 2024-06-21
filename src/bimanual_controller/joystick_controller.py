@@ -25,7 +25,7 @@ class JoystickController():
         self._is_rumbled = False
 
         # Initialize low-pass filters for each axis
-        alpha = 0.05  # Smoothing factor
+        alpha = 0.5  # Smoothing factor
         self.lpf_vx = LowPassFilter(alpha)
         self.lpf_vy = LowPassFilter(alpha)
         self.lpf_vz = LowPassFilter(alpha)

@@ -7,6 +7,9 @@ import spatialgeometry as geometry
 from swift import Swift
 from bimanual_controller.math_utils import CalcFuncs
 
+from typing import Union
+ArrayLike = Union[list, np.ndarray, tuple, set]
+
 class FakePR2:
 
     r"""
@@ -15,12 +18,13 @@ class FakePR2:
     This will initialize the Swift environment with robot model without any ROS components. 
     This model will be fed with joint states provided and update the visualization of the virtual frame . """
 
-    def __init__(self, control_rate, launch_visualizer) -> None:
+    def __init__(self, control_rate, launch_visualizer = False) -> None:
 
         self._control_rate = control_rate
+        self._is_collapsed = False
         self._launch_visualizer = launch_visualizer
         self._robot = rtb.models.PR2()
-        self._is_collapsed = False
+
         self._drift_error = np.zeros(6)
         self._tool_offset = {
             'l': np.eye(4),
@@ -99,29 +103,64 @@ class FakePR2:
 
         return True
 
-    def set_states(self, joint_states: list, real_robot=True):
-        r"""
-        Set the joint states of the arms only
-        :param joint_states: list of joint states
-        :return: None
-        """
+    # def set_states(self, joint_states: list, real_robot=True):
+    #     r"""
+    #     Set the joint states of the arms only
+    #     :param joint_states: list of joint states
+    #     :return: None
+    #     """
 
-        if real_robot:
-            right_js = CalcFuncs.reorder_values(joint_states[17:24])
-            left_js = CalcFuncs.reorder_values(joint_states[31:38])
-        else:
-            right_js = joint_states[0:7]
-            left_js = joint_states[7:14]
+    #     if real_robot:
+    #         right_js = CalcFuncs.reorder_values(joint_states[17:24])
+    #         left_js = CalcFuncs.reorder_values(joint_states[31:38])
+    #     else:
+    #         right_js = joint_states[0:7]
+    #         left_js = joint_states[7:14]
 
-        self._robot.q[16:23] = right_js
-        self._robot.q[23:30] = left_js
+    #     self._robot.q[16:23] = right_js
+    #     self._robot.q[23:30] = left_js
 
-        if self._launch_visualizer:
+    #     if self._launch_visualizer:
 
-            self._left_ax.T = self._robot.fkine(
-                self._robot.q, end=self._arms_frame['l']['end'], tool=self._tool_offset['l']).A
-            self._right_ax.T = self._robot.fkine(
-                self._robot.q, end=self._arms_frame['r']['end'], tool=self._tool_offset['r']).A
+    #         self._left_ax.T = self._robot.fkine(
+    #             self._robot.q, end=self._arms_frame['l']['end'], tool=self._tool_offset['l']).A
+    #         self._right_ax.T = self._robot.fkine(
+    #             self._robot.q, end=self._arms_frame['r']['end'], tool=self._tool_offset['r']).A
+
+    def set_states(self, joint_states, real_robot=True):
+            r"""
+            Set the joint states of the arms only
+            :param joint_states: list of joint states
+            :return: None
+            """
+
+            if real_robot:
+
+                right_js = CalcFuncs.reorder_values(joint_states.position[17:24])
+                left_js = CalcFuncs.reorder_values(joint_states.position[31:38])
+
+                right_jv = CalcFuncs.reorder_values(joint_states.velocity[17:24])
+                left_jv = CalcFuncs.reorder_values(joint_states.velocity[31:38])
+
+            else:
+
+                right_js = joint_states.position[0:7]
+                left_js = joint_states.position[7:14]
+
+                right_jv = joint_states.velocity[0:7]
+                left_jv = joint_states.velocity[7:14]
+
+            self._robot.q[16:23] = right_js
+            self._robot.q[23:30] = left_js
+
+            self._robot.qd[16:23] = right_jv
+            self._robot.qd[23:30] = left_jv
+
+            if self._launch_visualizer:
+                self._left_ax.T = self._robot.fkine(
+                    self._robot.q, end=self._arms_frame['l']['end'], tool=self._tool_offset['l']).A
+                self._right_ax.T = self._robot.fkine(
+                    self._robot.q, end=self._arms_frame['r']['end'], tool=self._tool_offset['r']).A
 
     def get_tool_pose(self, side: str, offset=True):
         r"""
@@ -146,8 +185,19 @@ class FakePR2:
             return self._robot.q[23:30]
         else:
             return self._robot.q[16:23]
+    
+    def get_joint_velocities(self, side: str):
+        r"""
+        Get the joint velocities of the robot
+        :return: joint velocities
+        """
+
+        if side == 'l':
+            return self._robot.qd[23:30]
+        else:
+            return self._robot.qd[16:23]
         
-    def get_joint_limits(self, side):
+    def get_joint_limits(self, side : str):
         r"""
         Get the joint limits of the robot
         :param side: side of the robot
@@ -171,7 +221,7 @@ class FakePR2:
 
         return qmin, qmax
 
-    def get_jacobian(self, side, q = None):
+    def get_jacobian(self, side : str, q : Union[list, np.ndarray, tuple, set, None] = None):
         r"""
         Get the Jacobian of the robot on the tool frame
         :param side: side of the robot
@@ -183,7 +233,7 @@ class FakePR2:
             q = self._robot.q.copy()
         return self._robot.jacobe(q, end=self._arms_frame[side]['end'], start=self._arms_frame[side]['start'], tool=self._tool_offset[side])
     
-    def manipulability_gradient(self, side, eps = 1e-3):
+    def manipulability_gradient(self, side : str, eps : float = 1e-3):
         r"""
         Get the manipulability gradient of the robot - numerical differentiation.
         Please note that this function is computationally expensive
@@ -200,12 +250,12 @@ class FakePR2:
 
             q_up = self._robot.q.copy()
             q_up[start_index + i] += eps
-            j_up = self.get_jacobian(side, q_up)
+            j_up = self.get_jacobian(side = side, q = q_up)
             m_up = CalcFuncs.manipulability(j_up)
 
             q_low = self._robot.q.copy()
             q_low[start_index + i] -= eps
-            j_low = self.get_jacobian(side, q_low)
+            j_low = self.get_jacobian(side = side, q = q_low)
             m_low = CalcFuncs.manipulability(j_low) 
 
             manip_grad[i] = (m_up - m_low) / (2 * eps)
@@ -213,7 +263,7 @@ class FakePR2:
         return manip_grad
 
 
-    def get_twist_in_tool_frame(self, side, twist):
+    def get_twist_in_tool_frame(self, side : str, twist : np.ndarray):
         r"""
         Get the twist in the tool frame by 
         converting the twist in the base frame 
@@ -230,7 +280,7 @@ class FakePR2:
 
         return twist_converted
 
-    def joint_limits_damper(self, qdot, dt, steepness=10):
+    def joint_limits_damper(self, qdot : np.ndarray, dt : float, steepness=10):
         r"""
         Repulsive potential field for joint limits for both arms
         :param qdot: joint velocities
@@ -252,6 +302,31 @@ class FakePR2:
         qdot_repulsive = - weights.max() * qdot
 
         return qdot_repulsive, weights.max(), np.where(weights == weights.max())[0]
+    
+    def joint_acceleration_damper(self, qd_command, dt, steepness=10):
+        r"""
+        velocity damper for joint acceleration limits
+
+        Joint acceleration will be calculated as taking the error 
+        between the current joint velocities and the next joint velocity commanded over interval dt
+
+        the limit is set to 0.5 rad/s^2
+        """
+        qd_cur_l = self.get_joint_velocities('l')
+        qd_cur_r = self.get_joint_velocities('r')
+        qd_cur = np.r_[qd_cur_l, qd_cur_r]
+
+        qdd = (qd_command - qd_cur) / dt
+        
+
+        # setup objective function with the error betwwen the commanding qd and the desired qd as qd_command
+        
+
+        # setup inequality constraint with the joint acceleration limits which is differentiated from the joint velocities
+        
+        
+
+        pass
     
     def joint_limits_damper_side(self, side, qdot, dt, steepness=10):
         r"""

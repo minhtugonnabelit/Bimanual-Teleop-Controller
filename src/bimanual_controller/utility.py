@@ -4,6 +4,10 @@ import numpy as np
 import yaml
 import matplotlib.pyplot as plt
 
+import qpsolvers
+
+cvxopt_installed = True
+
 import rospy, rospkg
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
@@ -167,6 +171,7 @@ def plot_manip_and_drift(constraint_distance: float,
                          joint_limits : np.ndarray, 
                          joint_positions : np.ndarray ,
                          joint_velocities: np.ndarray, 
+                         joint_efforts: np.ndarray,
                          drift: np.ndarray, 
                          manip: np.ndarray, 
                          dt=0.001):
@@ -194,7 +199,7 @@ def plot_manip_and_drift(constraint_distance: float,
     manip_axes = ax[0, 0]
     drift_axes = ax[0, 1]
     manip_l = manip[0]
-    manip_r = manip[1]    
+    manip_r = manip[1]
     joint_pos_axes = ax[1, :]
     joint_vel_axes = ax[2, :]
 
@@ -210,10 +215,10 @@ def plot_manip_and_drift(constraint_distance: float,
         time_space = np.linspace(0, len(joint_positions['l'])
                                  * dt, len(joint_positions['l']) + 1)
         
-    joint_accelerations = {
-        'left': np.diff(joint_velocities['left'], axis=0) / dt,
-        'right': np.diff(joint_velocities['right'], axis=0) / dt
-    }
+    # joint_accelerations = {
+    #     'left': np.diff(joint_velocities['left'], axis=0) / dt,
+    #     'right': np.diff(joint_velocities['right'], axis=0) / dt
+    # }
 
     # for i, side in enumerate(['left', 'right']):
     #     # for j in range(7):  # Assuming there are 7 joints
@@ -232,12 +237,12 @@ def plot_manip_and_drift(constraint_distance: float,
     #     joint_pos_axes[i].legend()
 
     for i, side in enumerate(['left', 'right']):
-        for j in range(7):  # Assuming there are 7 joints
-            joint_data = joint_accelerations[side][:, j]
-            joint_pos_axes[i].plot(time_space[:-1], joint_data, label=f'Joint {j+1}')  # Use time_space[:-1] because np.diff reduces the length by 1
-        joint_pos_axes[i].set_title(f'{side.capitalize()} Arm Joint Accelerations')
+        for j in range(7): 
+            joint_data = np.array([d[j] for d in joint_efforts[side]])
+            joint_pos_axes[i].plot(time_space, joint_data, label=f'Joint {j+1}')  # Use time_space[:-1] because np.diff reduces the length by 1
+        joint_pos_axes[i].set_title(f'{side.capitalize()} Arm Joint efforts')
         joint_pos_axes[i].set_xlabel('Time [s]')
-        joint_pos_axes[i].set_ylabel(r'Joint Acceleration [$rad/s^2$]')
+        joint_pos_axes[i].set_ylabel(r'Joint efforts [Nm]')
         joint_pos_axes[i].legend()
 
     # Plot joint velocities
@@ -250,7 +255,7 @@ def plot_manip_and_drift(constraint_distance: float,
         joint_vel_axes[i].set_ylabel('Joint Velocity [rad/s]')
         joint_vel_axes[i].legend()
 
-    # Plot manipulability data    # Plot drift data
+    # Plot manipulability data   
     if len(manip_r) != len(time_space):
         time_space = np.linspace(0, len(manip_r)
                                  * dt, len(manip_r) + 1)

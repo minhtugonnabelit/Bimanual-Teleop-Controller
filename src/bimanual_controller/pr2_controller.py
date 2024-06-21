@@ -16,7 +16,7 @@ from bimanual_controller.joystick_controller import JoystickController
 
 class PR2Controller:
 
-    def __init__(self, rate, joystick : JoystickController, config):
+    def __init__(self, rate, joystick : JoystickController, config, data_plotter=False):
 
         self._cfg = config
         self._JOINT_NAMES = self._cfg['JOINT_NAMES']
@@ -51,28 +51,44 @@ class PR2Controller:
 
         self._constraint_distance = 0
         self._constraint_is_set = False
-        self._offset_distance = []
-        self._manipulability = [[], []]
-        self._q_record = [[], []]
-        self._qdot_record = {
-            'left': [],
-            'right': []
-        }
-        self._qdot_record_PID = {
-            'left': {'desired': [],  'actual': []},
-            'right': {'desired': [],  'actual': []}
-        }
-        
-        rospy.loginfo('Controller ready to go')
-        rospy.on_shutdown(self.__clean)
 
-    def __clean(self):
-        self._virtual_robot.shutdown()
-        rospy.loginfo('Shutting down the virtual robot')
+        self._data_plotter = data_plotter
+        if self._data_plotter:
+            self._offset_distance = []
+            self._manipulability = [[], [], []]
+            self._q_record = [[], []]
+            self._qdot_record = {
+                'left': [],
+                'right': []
+            }
+            self._qdd_record = {
+                'left': [],
+                'right': []
+            }
+            
+            self._qdot_record_PID = {
+                'left': {'desired': [],  'actual': []},
+                'right': {'desired': [],  'actual': []}
+            }
+
+        rospy.loginfo('Controller ready to go')
+        rospy.on_shutdown(self._clean)
+
+    def _joint_state_callback(self, msg: JointState):
+        self._joint_states = msg
+        self._virtual_robot.set_states(self._joint_states)
+
+    def _clean(self):
         if self._joystick.is_rumbled():
             self._joystick.stop_rumble()
+        self._virtual_robot.shutdown()
+        rospy.loginfo('Shutting down the virtual robot')
         PR2Controller.kill_jg_vel_controller()
 
+        if self._data_plotter:
+            self._plot_data()
+
+    def _plot_data(self):
         joint_limits = self._virtual_robot.get_joint_limits_all()
         fig, ax = plot_manip_and_drift(
             self._constraint_distance,
@@ -80,15 +96,12 @@ class PR2Controller:
             joint_limits,
             self._q_record,
             self._qdot_record,
+            self._qdd_record,
             self._offset_distance,
             self._manipulability,
             dt=self._dt)
 
         plt.show()
-
-    def _joint_state_callback(self, msg: JointState):
-        self._joint_states = msg
-        self._virtual_robot.set_states(self._joint_states.position)
 
     def sleep(self):
         self._rate.sleep()
@@ -106,7 +119,11 @@ class PR2Controller:
         self._virtual_robot.set_constraints(virtual_pose)
         return True, virtual_pose, constraint_distance
 
-    def set_manip_thresh(self, manip_thresh):
+    def set_jacobian_constraints(self, jacobian_constraints : np.ndarray):
+        self._jacobian_constraints = jacobian_constraints
+        return True
+
+    def set_manip_thresh(self, manip_thresh : float):
         self._manip_thresh = manip_thresh
 
 
@@ -122,7 +139,7 @@ class PR2Controller:
     def get_tool_pose(self, side: str, isOffset=True):
         return self._virtual_robot.get_tool_pose(side, isOffset)
     
-    def get_twist_in_tool_frame(self, side: str, twist):
+    def get_twist_in_tool_frame(self, side: str, twist : np.ndarray):
         return self._virtual_robot.get_twist_in_tool_frame(side, twist)
     
 
@@ -260,14 +277,20 @@ class PR2Controller:
         self._manipulability[1].append(CalcFuncs.manipulability(
             self.get_jacobian(self._right_arm.get_arm_name())))
 
-    def store_joint_velocities(self, side: str, qdot: list):
-        self._qdot_record[side].append(qdot)
-
     def store_joint_positions(self):
         self._q_record[0].append(CalcFuncs.reorder_values(
             self._joint_states.position[31:38]))
         self._q_record[1].append(CalcFuncs.reorder_values(
             self._joint_states.position[17:24]))
+        
+    def store_joint_velocities(self, side: str, qdot: list):
+        self._qdot_record[side].append(qdot)
+
+    def store_joint_efforts(self):
+        self._qdd_record['left'].append(CalcFuncs.reorder_values(
+            self._joint_states.effort[31:38]))
+        self._qdd_record['right'].append(CalcFuncs.reorder_values(
+            self._joint_states.effort[17:24]))
         
     def store_joint_velocities_for_PID_tuner(self, side: str, qdot: list):
         self._qdot_record_PID[side]['desired'].append(qdot)
