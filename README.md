@@ -6,28 +6,30 @@
 
 This package provides a bimanual teleoperation controller for controlling a robotic system with two arms. It allows users to remotely control the robot's arms using a teleoperation interface for separated arm mission and bimanual manipulation task.
 
-## Features
-
-- Intuitive and user-friendly teleoperation interface
-- Real-time control of both arms
-- Support for various robotic systems and manipulators
 
 ## Installation
+
+This package calculation depends heavily on the robotics toolbox provided by Peter Corke and Jesse Haviland.
+The python module can be installed by standard pip tool
+```bash
+pip install robotics-toolbox-python
+```
 
 1. Clone the repository:
 
    ```bash
    git clone https://github.com/your-username/bimanual_teleop_controller.git
    ```
-2. Install required dependencies:
+2. Install required dependencies for ROS:
     ```bash
     rosdep install --from-paths src --ignore-src -r -y
     ```
 
+
 #### Note:
 To sync time between host machine and ssh machine
 ``` bash
-ssh -t pr2@10.68.0.1 sudo date --set @$(date -u +%s) 
+ssh -t host@X.X.X.X sudo date --set @$(date -u +%s) 
 ```
 
 ## Contributors

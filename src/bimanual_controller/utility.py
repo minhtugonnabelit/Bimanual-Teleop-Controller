@@ -200,7 +200,7 @@ def plot_manip_and_drift(constraint_distance: float,
     drift_axes = ax[0, 1]
     manip_l = manip[0]
     manip_r = manip[1]
-    joint_pos_axes = ax[1, :]
+    joint_eff_axes = ax[1, :]
     joint_vel_axes = ax[2, :]
 
     plt.subplots_adjust(left=0.1, right=0.9, top=0.85, bottom=0.15, hspace=0.5, wspace=0.2)  # Adjust horizontal spacing
@@ -239,11 +239,11 @@ def plot_manip_and_drift(constraint_distance: float,
     for i, side in enumerate(['left', 'right']):
         for j in range(7): 
             joint_data = np.array([d[j] for d in joint_efforts[side]])
-            joint_pos_axes[i].plot(time_space, joint_data, label=f'Joint {j+1}')  # Use time_space[:-1] because np.diff reduces the length by 1
-        joint_pos_axes[i].set_title(f'{side.capitalize()} Arm Joint efforts')
-        joint_pos_axes[i].set_xlabel('Time [s]')
-        joint_pos_axes[i].set_ylabel(r'Joint efforts [Nm]')
-        joint_pos_axes[i].legend()
+            joint_eff_axes[i].plot(time_space, joint_data, label=f'Joint {j+1}')  # Use time_space[:-1] because np.diff reduces the length by 1
+        joint_eff_axes[i].set_title(f'{side.capitalize()} Arm Joint efforts')
+        joint_eff_axes[i].set_xlabel('Time [s]')
+        joint_eff_axes[i].set_ylabel(r'Joint efforts [Nm]')
+        joint_eff_axes[i].legend()
 
     # Plot joint velocities
     for i, side in enumerate(['left', 'right']):

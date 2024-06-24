@@ -14,7 +14,7 @@
    <node pkg="rosservice" type="rosservice" name="load_l_joint_group_vel_controller" args="call /pr2_controller_manager/load_controller 'name: 'l_arm_joint_group_velocity_controller''"/>
    
    <node pkg="bimanual_teleop_controller" type="teleop_test.py" name="teleop_test" output="screen">
-      <param name="data_plot" value="$(arg data_plot)" />
+      <param name="data_plot" type="bool" value="$(arg data_plot)" />
    </node>
 
 </launch>   

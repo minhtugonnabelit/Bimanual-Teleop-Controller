@@ -86,6 +86,7 @@ class PR2Controller:
         PR2Controller.kill_jg_vel_controller()
 
         if self._data_plotter:
+            rospy.loginfo('Plotting data')
             self._plot_data()
 
     def _plot_data(self):
@@ -151,7 +152,7 @@ class PR2Controller:
             twist_w_in_ee = twist   
         jacob = self.get_jacobian(side=side)
 
-        alpha = 0.1 # gain value for manipulability gradient
+        alpha = 0.05 # gain value for manipulability gradient
         qdot_sec = alpha * self._virtual_robot.manipulability_gradient(side=side)
 
         qdot = np.linalg.pinv(jacob) @ twist_w_in_ee + \
@@ -160,13 +161,11 @@ class PR2Controller:
         if joint_limit_damper:
             qdot += self.joint_limit_damper_side(side=side, qdot=qdot, steepness=damper_steepness)
         
-        # qdot_indiv = CalcFuncs.rmrc(jacob, twist_w_in_ee, w_thresh=manip_thresh)
+        # qdot = CalcFuncs.rmrc(jacob, twist_w_in_ee, w_thresh=manip_thresh)
         
         # if joint_limit_damper:
-        #     qdot_indiv += self.joint_limit_damper_side(side=side, qdot=qdot_indiv, steepness=damper_steepness)
+        #     qdot += self.joint_limit_damper_side(side=side, qdot=qdot, steepness=damper_steepness)
         
-        # qdot = np.linalg.pinv(jacob) @ twist_w_in_ee + CalcFuncs.nullspace_projector(jacob) @ qdot_indiv
-
         return qdot
 
     def joint_limit_damper_side(self, side: str, qdot, steepness=10) -> list:

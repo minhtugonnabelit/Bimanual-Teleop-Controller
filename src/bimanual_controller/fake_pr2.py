@@ -47,12 +47,8 @@ class FakePR2:
         self.qmid = (qmin + qmax) / 2
 
         # Normal joint with soft limits start at 80% and end at 90% of the joint limits
-        self.soft_limit_start = ((qmax - qmin)/2) * 0.75
+        self.soft_limit_start = ((qmax - qmin)/2) * 0.7
         self.soft_limit_end = ((qmax - qmin)/2) * 0.9
-
-        # Except for the shoulder lift joints of both arms
-        self.soft_limit_start[1] = ((qmax[1] - qmin[1])/2) * 0.7
-        self.soft_limit_start[8] = deepcopy(self.soft_limit_start[1])
 
         self.soft_limit_range = (self.soft_limit_end - self.soft_limit_start)
 
@@ -102,30 +98,6 @@ class FakePR2:
             self._robot.q, end=self._arms_frame['r']['end'])) @ virtual_pose
 
         return True
-
-    # def set_states(self, joint_states: list, real_robot=True):
-    #     r"""
-    #     Set the joint states of the arms only
-    #     :param joint_states: list of joint states
-    #     :return: None
-    #     """
-
-    #     if real_robot:
-    #         right_js = CalcFuncs.reorder_values(joint_states[17:24])
-    #         left_js = CalcFuncs.reorder_values(joint_states[31:38])
-    #     else:
-    #         right_js = joint_states[0:7]
-    #         left_js = joint_states[7:14]
-
-    #     self._robot.q[16:23] = right_js
-    #     self._robot.q[23:30] = left_js
-
-    #     if self._launch_visualizer:
-
-    #         self._left_ax.T = self._robot.fkine(
-    #             self._robot.q, end=self._arms_frame['l']['end'], tool=self._tool_offset['l']).A
-    #         self._right_ax.T = self._robot.fkine(
-    #             self._robot.q, end=self._arms_frame['r']['end'], tool=self._tool_offset['r']).A
 
     def set_states(self, joint_states, real_robot=True):
             r"""
