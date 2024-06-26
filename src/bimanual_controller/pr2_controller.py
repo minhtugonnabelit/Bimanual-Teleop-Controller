@@ -152,19 +152,16 @@ class PR2Controller:
             twist_w_in_ee = twist   
         jacob = self.get_jacobian(side=side)
 
-        alpha = 0.05 # gain value for manipulability gradient
+        alpha = 1 # gain value for manipulability gradient
         qdot_sec = alpha * self._virtual_robot.manipulability_gradient(side=side)
 
         qdot = np.linalg.pinv(jacob) @ twist_w_in_ee + \
                 CalcFuncs.nullspace_projector(jacob) @ qdot_sec
         
-        if joint_limit_damper:
-            qdot += self.joint_limit_damper_side(side=side, qdot=qdot, steepness=damper_steepness)
-        
         # qdot = CalcFuncs.rmrc(jacob, twist_w_in_ee, w_thresh=manip_thresh)
         
-        # if joint_limit_damper:
-        #     qdot += self.joint_limit_damper_side(side=side, qdot=qdot, steepness=damper_steepness)
+        if joint_limit_damper:
+            qdot += self.joint_limit_damper_side(side=side, qdot=qdot, steepness=damper_steepness)
         
         return qdot
 
@@ -185,9 +182,10 @@ class PR2Controller:
         return joint_limits_damper
 
     def joint_limit_damper(self, qdot, steepness=10) -> list:
+
         joint_limits_damper, max_weights, joint_on_max_limit = self._virtual_robot.joint_limits_damper(
             qdot, self._dt, steepness)
-
+        
         if max_weights > 0.8:
 
             side = 'left'

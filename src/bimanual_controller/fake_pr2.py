@@ -44,6 +44,8 @@ class FakePR2:
 
         # Get the joint limits and form the symmetric soft limits
         qmin, qmax = self.get_joint_limits_all()
+        qmin[1] = qmin[1] * 0.7         # enforce pr2 actual hardware limits for shoulder lift joint at lower bound
+        qmin[8] = qmin[8] * 0.7 
         self.qmid = (qmin + qmax) / 2
 
         # Normal joint with soft limits start at 80% and end at 90% of the joint limits
@@ -232,6 +234,7 @@ class FakePR2:
 
             manip_grad[i] = (m_up - m_low) / (2 * eps)
 
+        # CalcFuncs.reorder_values(manip_grad, reverse=True)
         return manip_grad
 
 

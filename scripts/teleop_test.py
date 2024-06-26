@@ -218,7 +218,7 @@ class BMCP:
 if __name__ == "__main__":
     try:
         rospy.init_node('bimanual_controller', log_level=2, anonymous=True)
-        data_plot = rospy.get_param('data_plot', True)
+        data_plot = rospy.get_param('~data_plot', True)
 
         b = BMCP(config=config, data_plot=data_plot)
         b.teleop_test()
