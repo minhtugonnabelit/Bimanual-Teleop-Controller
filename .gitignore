@@ -163,4 +163,4 @@ cython_debug/
 #.idea/
 
 # ignore test files
-scripts/sidetest/
+sidetest/
