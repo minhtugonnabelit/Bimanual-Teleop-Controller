@@ -78,8 +78,8 @@ class PR2Controller:
         self._virtual_robot.set_states(self._joint_states)
 
     def _clean(self):
-        if self._joystick.is_rumbled():
-            self._joystick.stop_rumble()
+        # if self._joystick.is_rumbled():
+        #     self._joystick.stop_rumble()
         self._virtual_robot.shutdown()
         rospy.loginfo('Shutting down the virtual robot')
         PR2Controller.kill_jg_vel_controller()
@@ -172,11 +172,11 @@ class PR2Controller:
         if max_weights > 0.8:
             side = 'left' if side == 'l' else 'right'
             rumble_freq = (max_weights - 0.8)*3
-            self._joystick.start_rumble(rumble_freq, 2*rumble_freq, 0)
+            # self._joystick.start_rumble(rumble_freq, 2*rumble_freq, 0)
             rospy.logwarn(
                 f"\nJoint limit avoidance mechanism is applied with max weight: {max_weights:.2f} at joint {self._JOINT_NAMES[side][joint_on_max_limit[0]]}")
-        else:
-            self._joystick.stop_rumble() if self._joystick.is_rumbled() else None
+        # else:
+        #     self._joystick.stop_rumble() if self._joystick.is_rumbled() else None
 
         return joint_limits_damper
 
@@ -193,11 +193,11 @@ class PR2Controller:
                 side = 'right'
 
             rumble_freq = (max_weights - 0.8)*3
-            self._joystick.start_rumble(rumble_freq, 2*rumble_freq, 0)
+            # self._joystick.start_rumble(rumble_freq, 2*rumble_freq, 0)
             rospy.logwarn(
                 f"\nJoint limit avoidance mechanism is applied with max weight: {max_weights:.2f} at joint {self._JOINT_NAMES[side][joint_on_max_limit[0]]}")
-        else :
-            self._joystick.stop_rumble() if self._joystick.is_rumbled() else None
+        # else :
+            # self._joystick.stop_rumble() if self._joystick.is_rumbled() else None
 
         return joint_limits_damper
 

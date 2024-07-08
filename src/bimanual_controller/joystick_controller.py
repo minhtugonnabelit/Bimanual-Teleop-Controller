@@ -50,8 +50,8 @@ class JoystickController():
             self._controller_frame_id = "hydra_right_pivot"
             self._base_frame_id = "hydra_base"
 
-        self._joy_pygame = JoystickController._joy_init()
-        self._is_rumbled = False
+        # self._joy_pygame = JoystickController._joy_init()
+        # self._is_rumbled = False
 
         self._joy_msg = rospy.wait_for_message(joy_topic, Joy)
         self._subscriber = rospy.Subscriber(joy_topic, Joy, self._joy_callback)
