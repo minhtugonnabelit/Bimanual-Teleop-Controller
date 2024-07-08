@@ -102,7 +102,7 @@ class BMCP:
                     rospy.loginfo('Data recording thread joined.')
 
                 os.system(
-                    'rosnode kill /razer_hydra_driver') if self._motion_tracker else os.system('rosnode kill /joy_node')
+                    'rosnode kill /razer_hydra_driver') if self._motion_tracker else os.system('rosnode kill /joy')
 
             # Set the kinematic constraints for BMCP and start joint group velocity controller
             # DO NOT combine this with the below if statement for not setting the constraint
@@ -190,11 +190,20 @@ class BMCP:
                 arm.open_gripper()
             elif joy_msg[1][self._gripper_close_index] == 1:
                 arm.close_gripper()
+                
         else:
-            if joy_msg[0][-1] == 1:  # up
-                arm.open_gripper()
-            elif - joy_msg[0][-1] == 1:  # down
-                arm.close_gripper()
+
+            if self.joystick.controller_name == "Xbox 360 Controller":
+                if joy_msg[0][self._gripper_close_index] == 1:  # up
+                    arm.open_gripper()
+                elif - joy_msg[0][self._gripper_close_index] == 1:  # down
+                    arm.close_gripper()
+
+            elif self.joystick.controller_name == "Sony PLAYSTATION(R)3 Controller":
+                if joy_msg[1][self._gripper_open_index]:
+                    arm.open_gripper()
+                elif joy_msg[1][self._gripper_close_index]:
+                    arm.close_gripper()
 
     def base_controller_handler(self):
 

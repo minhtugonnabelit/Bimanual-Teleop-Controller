@@ -34,3 +34,21 @@ JOINT_NAMES :
     - r_wrist_flex_joint
     - r_wrist_roll_joint
 
+# DEADMAN_SWITCH: 7
+# SYSTEM_HALT: -7
+# RIGHT_ARM: 4
+# LEFT_ARM: 5
+# GRIPPER_OPEN: -4
+# GRIPPER_CLOSE: -3
+# TRIGGER_CONSTRAINT: [8, 9]
+
+# UP_TRI: 2
+# DOWN_CROSS: 0
+# TURN_RIGHT_CIRCLE: 1
+# TURN_LEFT_SQUARE: 3
+# Y_AXIS: 0
+# X_AXIS: 1
+# ROLL_AXIS: 3
+# PITCH_AXIS: 4
+# AGGRESSIVE: -1
+# BASE: 2 

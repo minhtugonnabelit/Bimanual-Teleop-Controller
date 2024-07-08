@@ -24,8 +24,11 @@ class LowPassFilter:
 class JoystickController():
     def __init__(self, motion_tracker=False):
 
+        self._joy_pygame = JoystickController._joy_init()
+        self._is_rumbled = False
+
         joy_topic = "/joy"
-        
+
         self._dead_switch_index = 5
         self._system_halt_index = -3
         self._right_arm_index = 4
@@ -33,6 +36,35 @@ class JoystickController():
         self._gripper_open_index = -1
         self._gripper_close_index = -1
         self._trigger_constraint_index = [6,7]
+
+        self._up = 3
+        self._down = 0
+        self._yaw_left = 2
+        self._yaw_right = 1
+        self._x_ax = 1
+        self._y_ax = 0
+        self._roll_ax = 3
+        self._pitch_ax = 4
+
+        controller_name = self._joy_pygame.get_name()
+        if controller_name == "Sony PLAYSTATION(R)3 Controller":
+            # pass
+            self._dead_switch_index = 5
+            self._system_halt_index = -7
+            self._right_arm_index = 4
+            self._left_arm_index = 5
+            self._gripper_open_index = -4
+            self._gripper_close_index = -3
+            self._trigger_constraint_index = [8, 9]
+            
+            self._up = 2
+            self._down = 0
+            self._yaw_left = 3
+            self._yaw_right = 1
+            self._x_ax = 1
+            self._y_ax = 0
+            self._roll_ax = 3
+            self._pitch_ax = 4
 
         self._motion_tracker = motion_tracker
         if self._motion_tracker:
@@ -49,9 +81,6 @@ class JoystickController():
             self._tf_listener = tf.TransformListener()
             self._controller_frame_id = "hydra_right_pivot"
             self._base_frame_id = "hydra_base"
-
-        # self._joy_pygame = JoystickController._joy_init()
-        # self._is_rumbled = False
 
         self._joy_msg = rospy.wait_for_message(joy_topic, Joy)
         self._subscriber = rospy.Subscriber(joy_topic, Joy, self._joy_callback)
@@ -116,19 +145,37 @@ class JoystickController():
             aggressive = (-self._joy_msg[0][trigger_side] + 1) / 2
 
             # Apply low-pass filter
-            vy = self.lpf_vy.filter(-self._joy_msg[0][0] / np.abs(
-                self._joy_msg[0][0]) if self._joy_msg[0][0] != 0 else 0)
-            vx = self.lpf_vx.filter(-self._joy_msg[0][1] / np.abs(
-                self._joy_msg[0][1]) if self._joy_msg[0][1] != 0 else 0)
-            y = self._joy_msg[1][2] - self._joy_msg[1][1]  # button X and B
+            vy = self.lpf_vy.filter(-self._joy_msg[0][self._y_ax] / np.abs(
+                self._joy_msg[0][self._y_ax]) if self._joy_msg[0][self._y_ax] != 0 else 0)
+            vx = self.lpf_vx.filter(-self._joy_msg[0][self._x_ax] / np.abs(
+                self._joy_msg[0][self._x_ax]) if self._joy_msg[0][self._x_ax] != 0 else 0)
+            y = self._joy_msg[1][self._yaw_left] - self._joy_msg[1][self._yaw_right]  # button X and B
 
             if not base:
                 vz = self.lpf_vz.filter(
-                    self._joy_msg[1][3] - self._joy_msg[1][0])  # button Y and A
+                    self._joy_msg[1][self._up] - self._joy_msg[1][self._down])  # button Y and A
                 r = self.lpf_r.filter(
-                    self._joy_msg[0][3] / np.abs(self._joy_msg[0][3]) if self._joy_msg[0][3] != 0 else 0)
-                p = self.lpf_p.filter(-self._joy_msg[0][4] / np.abs(
-                    self._joy_msg[0][4]) if self._joy_msg[0][4] != 0 else 0)
+                    self._joy_msg[0][self._roll_ax] / np.abs(self._joy_msg[0][self._roll_ax]) if self._joy_msg[0][self._roll_ax] != 0 else 0)
+                p = self.lpf_p.filter(-self._joy_msg[0][self._pitch_ax] / np.abs(
+                    self._joy_msg[0][self._pitch_ax]) if self._joy_msg[0][self._pitch_ax] != 0 else 0)
+                
+            # trigger_side = 5 if not base else 2
+            # aggressive = (-self._joy_msg[0][trigger_side] + 1) / 2
+
+            # # Apply low-pass filter
+            # vy = self.lpf_vy.filter(-self._joy_msg[0][0] / np.abs(
+            #     self._joy_msg[0][0]) if self._joy_msg[0][0] != 0 else 0)
+            # vx = self.lpf_vx.filter(-self._joy_msg[0][1] / np.abs(
+            #     self._joy_msg[0][1]) if self._joy_msg[0][1] != 0 else 0)
+            # y = self._joy_msg[1][2] - self._joy_msg[1][1]  # button X and B
+
+            # if not base:
+            #     vz = self.lpf_vz.filter(
+            #         self._joy_msg[1][3] - self._joy_msg[1][0])  # button Y and A
+            #     r = self.lpf_r.filter(
+            #         self._joy_msg[0][3] / np.abs(self._joy_msg[0][3]) if self._joy_msg[0][3] != 0 else 0)
+            #     p = self.lpf_p.filter(-self._joy_msg[0][4] / np.abs(
+            #         self._joy_msg[0][4]) if self._joy_msg[0][4] != 0 else 0)
 
         twist = np.zeros(6)
         twist[:3] = np.array([vx, vy, vz]) * gain[0] * aggressive
@@ -213,3 +260,7 @@ class JoystickController():
     def trigger_constraint_index(self):
         return self._trigger_constraint_index
     
+    
+    @property
+    def controller_name(self):
+        return self._joy_pygame.get_name()
