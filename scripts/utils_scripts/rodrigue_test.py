@@ -1,86 +1,48 @@
-# import numpy as np
-# import roboticstoolbox as rtb
-# from spatialmath import SE3
-# import spatialmath as sm
-# from spatialmath.base import smb
-# import spatialgeometry as gm
-# import math
-# from swift import Swift
+import numpy as np
+import roboticstoolbox as rtb
+from spatialmath import SE3
+import spatialmath as sm
+from spatialmath.base import smb
+import spatialgeometry as gm
+import math
+from swift import Swift
 
-# target = SE3(0.5, 0.5, 0.5)
-# target_ax = gm.Axes(length=0.1, pose=target.A)
-# alpha = math.pi/6
-# axis_tail = np.array([0, 0, 1])
-# axis_head = np.array([1, 1, 0])
+target = SE3(0.5, 0.5, 0.5)
+target_ax = gm.Axes(length=0.1, pose=target.A)
+alpha = math.pi/6
+axis_tail = np.array([0, 0, 1])
+axis_head = np.array([1, 1, 0])
 
-# p1 = gm.Sphere(radius=0.03, color=[1, 0, 0], pose=sm.SE3(axis_tail))
-# p2 = gm.Sphere(radius=0.03, color=[0, 1, 0], pose=sm.SE3(axis_head))
+p1 = gm.Sphere(radius=0.03, color=[1, 0, 0], pose=sm.SE3(axis_tail))
+p2 = gm.Sphere(radius=0.03, color=[0, 1, 0], pose=sm.SE3(axis_head))
 
-# path = rtb.ctraj(sm.SE3(axis_tail), sm.SE3(axis_head), 15)
+path = rtb.ctraj(sm.SE3(axis_tail), sm.SE3(axis_head), 15)
 
-# a = axis_head - axis_tail
-# a = a / np.linalg.norm(a)
+a = axis_head - axis_tail
+a = a / np.linalg.norm(a)
 
-# # R = np.eye(3) + math.sin(alpha) * smb.skew(a) + (1 - math.cos(alpha)) * smb.skew(a) @ smb.skew(a)  # Rodrigues' formula   
-# R = smb.rodrigues(a, alpha) 
-# RT = np.eye(4)
-# RT[:3,:3]= R
-# # 
-# T_dot = sm.SE3(axis_tail).A
-# target_dot = np.linalg.inv(T_dot) @ target.A
+# R = np.eye(3) + math.sin(alpha) * smb.skew(a) + (1 - math.cos(alpha)) * smb.skew(a) @ smb.skew(a)  # Rodrigues' formula   
+R = smb.rodrigues(a, alpha) 
+RT = np.eye(4)
+RT[:3,:3]= R
 
-# target_dot_new = RT @ target_dot
+T_dot = sm.SE3(axis_tail).A
+target_dot = np.linalg.inv(T_dot) @ target.A
 
-# target_new = T_dot @ target_dot_new
-# target_new_ax = gm.Axes(length=0.1, pose=target_new)
+target_dot_new = RT @ target_dot
 
-# env = Swift()
-# env.launch()
-# env.add(target_ax)  
-# env.add(p1)
-# env.add(p2)
+target_new = T_dot @ target_dot_new
+target_new_ax = gm.Axes(length=0.1, pose=target_new)
 
-# for p in path[1:-2]:
-#     env.add(gm.Sphere(radius=0.02, color=[0, 0, 1], pose=p))
+env = Swift()
+env.launch()
+env.add(target_ax)  
+env.add(p1)
+env.add(p2)
 
-# env.add(target_new_ax)
-# env.hold()
+for p in path[1:-2]:
+    env.add(gm.Sphere(radius=0.02, color=[0, 0, 1], pose=p))
 
-import pygame
-import sys
- 
-# Initialize the pygame library
-pygame.init()
- 
-# Setup joystick
-joystick_count = pygame.joystick.get_count()
-if joystick_count == 0:
-    raise Exception('No joystick found')
-else:
-    joystick = pygame.joystick.Joystick(0)  # NOTE: Change 0 to another number if multiple joysticks present
-    joystick.init()
- 
-# Print joystick information
-joy_name = joystick.get_name()
-joy_axes = joystick.get_numaxes()
-joy_buttons = joystick.get_numbuttons()
- 
-print(f'Your joystick ({joy_name}) has:')
-print(f' - {joy_buttons} buttons')
-print(f' - {joy_axes} axes')
- 
-# # Main loop to check joystick functionality
-# while True:
-#     for event in pygame.event.get():
-#         if event.type == pygame.QUIT:
-#             pygame.quit()
-#             sys.exit()
- 
-#     # Print buttons/axes info to the console
-#     button_info = [f'Button[{i}]:{joystick.get_button(i)}' for i in range(joy_buttons)]
-#     axis_info = [f'Axes[{i}]:{joystick.get_axis(i):.3f}' for i in range(joy_axes)]
- 
-#     info_str = '--------------\n' + '\n'.join(button_info + axis_info) + '\n--------------\n'
-#     print(info_str)
- 
-#     pygame.time.delay(50)  # Pause for 50 ms (equivalent to pause(0.05) in MATLAB)
+env.add(target_new_ax)
+env.hold()
+
