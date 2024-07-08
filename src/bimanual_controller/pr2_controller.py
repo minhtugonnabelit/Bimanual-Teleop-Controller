@@ -2,12 +2,11 @@
 
 import rospy
 from std_msgs.msg import Float64MultiArray
-from sensor_msgs.msg import JointState, Joy
+from sensor_msgs.msg import JointState
 from geometry_msgs.msg import Twist
 from pr2_mechanism_msgs.srv import SwitchController, UnloadController
 from pr2_controllers_msgs.msg import Pr2GripperCommand
 
-import numpy as np
 from bimanual_controller.utility import *
 from bimanual_controller.fake_pr2 import FakePR2
 from bimanual_controller.arm_controller import ArmController
@@ -144,7 +143,7 @@ class PR2Controller:
         return self._virtual_robot.get_twist_in_tool_frame(side, twist)
     
 
-    def process_arm_movement(self, side: str, twist, manip_thresh, joint_limit_damper=True, damper_steepness=10, twist_in_ee=False):
+    def process_arm_movement(self, side: str, twist, manip_thresh, joint_limit_damper=True, damper_steepness=10, twist_in_ee=False) -> list:
         if not twist_in_ee:
             ee_pose = np.round(self._right_arm.get_gripper_transform(), 4) if side == 'r' else np.round(self._left_arm.get_gripper_transform(), 4)
             twist_w_in_ee = CalcFuncs.adjoint(np.linalg.inv(ee_pose)) @ twist
@@ -152,8 +151,8 @@ class PR2Controller:
             twist_w_in_ee = twist   
         jacob = self.get_jacobian(side=side)
 
-        alpha = 1 # gain value for manipulability gradient
-        qdot_sec = alpha * self._virtual_robot.manipulability_gradient(side=side)
+        alpha = 2 # gain value for manipulability gradient
+        qdot_sec = alpha * self._virtual_robot.manipulability_gradient(side=side, eps=0.01)
 
         qdot = np.linalg.pinv(jacob) @ twist_w_in_ee + \
                 CalcFuncs.nullspace_projector(jacob) @ qdot_sec

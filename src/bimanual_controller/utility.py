@@ -4,10 +4,6 @@ import numpy as np
 import yaml
 import matplotlib.pyplot as plt
 
-import qpsolvers
-
-cvxopt_installed = True
-
 import rospy, rospkg
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 

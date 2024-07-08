@@ -1,20 +1,36 @@
 <launch>
 
    <arg name="data_plot" default="false" />
+   <arg name="device" default="/dev/hydra" />
+   <arg name="motion_tracker" default="false" />
+   <arg name="with_robot" default="false" />
 
-   <!-- joystick node -->
-   <node name="joy" pkg="joy" type="joy_node" required="true">
+   <!-- Conditional joystick node -->
+   <node name="joy" pkg="joy" type="joy_node" required="true" if="$(eval not arg('motion_tracker'))">
       <param name="~dev" value="/dev/input/js0" />
       <param name="~deadzone" value="0.05" />
    </node>
 
+   <!-- Conditional hydra_rviz node -->
+   <group if="$(eval arg('motion_tracker'))">
+      <include file="$(find razer_hydra)/launch/hydra.launch">
+         <arg name="device" value="$(arg device)" />
+         <arg name="with_robot" value="$(arg with_robot)" />
+      </include>
+      <node type="rviz" name="rviz" pkg="rviz" args="-d $(find razer_hydra)/config/config.rviz" />
+   </group>
+
+   <!-- Load joint group velocity controllers params -->
    <rosparam file="$(find bimanual_teleop_controller)/config/tuned_pr2_joint_group_velocity_controllers.yaml" command="load" />
 
+   <!-- Load joint group velocity controllers -->
    <node pkg="rosservice" type="rosservice" name="load_r_joint_group_vel_controller" args="call /pr2_controller_manager/load_controller 'name: 'r_arm_joint_group_velocity_controller''"/>
    <node pkg="rosservice" type="rosservice" name="load_l_joint_group_vel_controller" args="call /pr2_controller_manager/load_controller 'name: 'l_arm_joint_group_velocity_controller''"/>
    
+   <!-- Start joint group velocity controllers -->
    <node pkg="bimanual_teleop_controller" type="teleop_test.py" name="teleop_test" output="screen">
       <param name="data_plot" type="bool" value="$(arg data_plot)" />
+      <param name="motion_tracker" type="bool" value="$(arg motion_tracker)" />
    </node>
 
 </launch>   

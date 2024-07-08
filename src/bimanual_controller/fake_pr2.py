@@ -1,6 +1,5 @@
 import numpy as np
 import threading
-from copy import deepcopy
 
 import roboticstoolbox as rtb
 import spatialgeometry as geometry
@@ -234,9 +233,7 @@ class FakePR2:
 
             manip_grad[i] = (m_up - m_low) / (2 * eps)
 
-        # CalcFuncs.reorder_values(manip_grad, reverse=True)
         return manip_grad
-
 
     def get_twist_in_tool_frame(self, side : str, twist : np.ndarray):
         r"""

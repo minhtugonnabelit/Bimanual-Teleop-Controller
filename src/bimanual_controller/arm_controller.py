@@ -28,9 +28,6 @@ class ArmController:
         self._joint_names = arm_group_joint_names
         self._gripper_cmd_type = gripper_cmd_type
         self._robot_base_frame = robot_base_frame
-        # joint_controller_name = 
-        # gripper_controller_name = arm + '_gripper_controller/command'
-
         self._joint_controller_pub = rospy.Publisher(
             arm_group_controller_name + "/command", controller_cmd_type, queue_size=10)
         self._gripper_controller_pub = rospy.Publisher(
@@ -73,13 +70,13 @@ class ArmController:
     def open_gripper(self):
         msg = self._gripper_cmd_type()
         msg.position = deepcopy(self._gripper_state) + 0.005
-        msg.max_effort = 200.0
+        msg.max_effort = 600.0
         self._gripper_controller_pub.publish(msg)
 
     def close_gripper(self):
         msg = self._gripper_cmd_type()
         msg.position = deepcopy(self._gripper_state) - 0.005
-        msg.max_effort = 200.0
+        msg.max_effort = 600.0
         self._gripper_controller_pub.publish(msg)
 
     def gripper_state_callback(self, data : JointControllerState):
