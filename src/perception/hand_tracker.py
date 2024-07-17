@@ -14,27 +14,51 @@ HANDEDNESS_TEXT_COLOR = (88, 205, 54)  # vibrant green
 
 class HandTracker():
 
-    def __init__(self) -> None:
+    def __init__(self, run_on_live_stream : False) -> None:
+
+        self._timestamp_ms = 0
+        self._result = None
+        self._output_image = None
+        self._run_on_live_stream = run_on_live_stream
+
+        running_mode = vision.RunningMode.IMAGE
+        result_callback = None
+        if run_on_live_stream:
+            running_mode = vision.RunningMode.LIVE_STREAM
+            result_callback = self.result_callback
+        
         base_options = python.BaseOptions(
             model_asset_path='/home/anhminh/git/hand_tracking/hand_landmarker.task')
         options = vision.HandLandmarkerOptions(base_options=base_options,
+                                               running_mode=running_mode,
+                                               result_callback=result_callback,
                                                num_hands=2)
         
         self.detector = vision.HandLandmarker.create_from_options(options)
 
-    def get_landmarks(self, rgb_image):
-        # STEP 3: Load the input image.
+    def result_callback(self, result: mp.tasks.vision.HandLandmarkerResult, output_image: mp.Image, timestamp_ms: int):
+        self._result = result
+        self._output_image = output_image
+        self._timestamp_ms = timestamp_ms
+
+    def get_landmarks_async(self, rgb_image, timestamp_ms):
         image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_image)
+        # timestamp_ms = self.get_timestamps()
 
-        # STEP 4: Detect hand landmarks from the input image.
+        self.detector.detect_async(image, timestamp_ms)
+        return self.get_result()
+
+    def get_result(self):
+        return self._result
+    
+    def get_timestamps(self):
+        return self._timestamp_ms
+    
+    def get_landmarks(self, rgb_image):
+        image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_image)
         detection_result = self.detector.detect(image)
-
-        handedness_list = detection_result.handedness
-        hand_landmarks_list = detection_result.hand_landmarks
-        hand_world_landmarks_list = detection_result.hand_world_landmarks
-
-        return handedness_list, hand_landmarks_list, hand_world_landmarks_list
-
+        return detection_result
+    
     def get_hand_annotation(self, rgb_image):
         # STEP 3: Load the input image.
         image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_image)
