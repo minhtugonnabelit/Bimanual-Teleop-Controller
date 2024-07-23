@@ -1,7 +1,5 @@
 import numpy as np
 import cv2
-import spatialmath.base as smb
-import spatialmath as sm
 
 import mediapipe as mp
 from mediapipe import solutions
@@ -14,7 +12,7 @@ from sensor_msgs.msg import Image, CameraInfo
 from cv_bridge import CvBridge, CvBridgeError
 from visualization_msgs.msg import Marker
 
-import types, time
+import time
 
 MARGIN = 10  # pixels
 FONT_SIZE = 1
@@ -25,39 +23,22 @@ MODEL_PATH = rospkg.RosPack().get_path('bimanual_teleop_controller') + '/config/
 
 class HandTracker():
 
-    def __init__(self, run_on_live_stream : False) -> None:
+    def __init__(self):
 
-        self._timestamp_ms = 0
         self._result = None
-        self._output_image = None
-        self._run_on_live_stream = run_on_live_stream
-
-        running_mode = vision.RunningMode.IMAGE
-        result_callback = None
-        if run_on_live_stream:
-            running_mode = vision.RunningMode.LIVE_STREAM
-            result_callback = self.result_callback
+        self._timestamp_ms = 0
         
         base_options = python.BaseOptions(
             model_asset_path=MODEL_PATH)
-        # options = vision.HandLandmarkerOptions(base_options=base_options,
-        #                                        running_mode=running_mode,
-        #                                        result_callback=result_callback,
-        #                                        num_hands=2)
-        # self.detector = vision.HandLandmarker.create_from_options(options)
         
         options = vision.GestureRecognizerOptions(base_options=base_options,
-                                               running_mode=running_mode,
-                                               result_callback=result_callback,
+                                               running_mode=vision.RunningMode.LIVE_STREAM,
+                                               result_callback=self.result_callback,
                                                num_hands=2)
         self.detector = vision.GestureRecognizer.create_from_options(options)
-        
-        
 
-
-    def result_callback(self, result: mp.tasks.vision.GestureRecognizerResult, output_image: mp.Image, timestamp_ms: int):
+    def result_callback(self, result: mp.tasks.vision.GestureRecognizerResult, timestamp_ms: int):
         self._result = result
-        self._output_image = output_image
         self._timestamp_ms = timestamp_ms
 
     def get_landmarks_async(self, rgb_image, timestamp_ms):
@@ -66,12 +47,6 @@ class HandTracker():
         self.detector.recognize_async(image, timestamp_ms)
         return self.get_result()
     
-    def get_landmarks(self, rgb_image):
-        image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_image)
-        
-        detection_result = self.detector.detect(image)
-        return detection_result
-
     def get_result(self):
         return self._result
     
@@ -84,14 +59,12 @@ class HandTracker():
     @staticmethod
     def draw_landmarks_on_image(rgb_image, detection_result):
         hand_landmarks_list = detection_result.hand_landmarks
-        hand_world_landmarks_list = detection_result.hand_world_landmarks
         handedness_list = detection_result.handedness
         annotated_image = np.copy(rgb_image)
 
         # Loop through the detected hands to visualize.
         for idx in range(len(hand_landmarks_list)):
             hand_landmarks = hand_landmarks_list[idx]
-            hand_world_landmarks = hand_world_landmarks_list[idx]
             handedness = handedness_list[idx]
 
             # Draw the hand landmarks.
@@ -99,10 +72,6 @@ class HandTracker():
             hand_landmarks_proto.landmark.extend([
                 landmark_pb2.NormalizedLandmark(x=landmark.x, y=landmark.y, z=landmark.z) for landmark in hand_landmarks
             ])
-
-            # if handedness[0].category_name == 'Right':
-            #     print(np.asarray(
-            #         [hand_world_landmarks[0].x, hand_world_landmarks[0].y, hand_world_landmarks[0].z]))
 
             solutions.drawing_utils.draw_landmarks(
                 annotated_image,
@@ -113,13 +82,9 @@ class HandTracker():
 
             # Get the top left corner of the detected hand's bounding box.
             height, width, _ = annotated_image.shape
-            # [landmark.x for landmark in hand_landmarks]
             x_coordinates = hand_landmarks[0].x
-            # [landmark.y for landmark in hand_landmarks]
             y_coordinates = hand_landmarks[0].y
-            # int(min(x_coordinates) * width)
             text_x = int(x_coordinates * width)
-            # int(min(y_coordinates) * height) - MARGIN
             text_y = int(y_coordinates * height) - MARGIN
 
             # Draw handedness (left or right hand) on the image.
@@ -135,7 +100,7 @@ class RealsenseTracker():
     def __init__(self) -> None:
         
         self._result = None
-        self._handtracker = HandTracker(run_on_live_stream=True)
+        self._handtracker = HandTracker()
         
         self._cam_inf = rospy.wait_for_message('/rs_camera/color/camera_info', CameraInfo)
         self._FX = self._cam_inf.K[0] 
@@ -152,18 +117,20 @@ class RealsenseTracker():
         self._depth_sub = rospy.Subscriber("/rs_camera/aligned_depth_to_color/image_raw", Image, self.depth_callback)
         
         self.kalman = cv2.KalmanFilter(4, 2)
-        self.kalman.measurementMatrix = np.array([[1,0,0,0], [0,1,0,0]], np.float32)
-        self.kalman.transitionMatrix = np.array([[1,0,1,0], [0,1,0,1], [0,0,1,0], [0,0,0,1]], np.float32)
+        self.kalman.measurementMatrix = np.array([[1,0,0,0], 
+                                                  [0,1,0,0]], np.float32)
+        
+        self.kalman.transitionMatrix = np.array([[1,0,1,0], 
+                                                 [0,1,0,1], 
+                                                 [0,0,1,0], 
+                                                 [0,0,0,1]], np.float32)
+        
         self.kalman.processNoiseCov = np.eye(4, dtype=np.float32) * 1e-2  
               
         self._jump_thresh = 1
         self._prev_depth = None
         self._last_valid_time = None
         self._depth_latency = 1.0
-        
-        # R = smb.rpy2r(-np.pi/2, np.pi/2, 0, order='xyz')
-        # self._cam_transform = np.eye(4)
-        # self._cam_transform[:3,:3] = R
               
         self._marker_pub = rospy.Publisher("/visualization_marker", Marker, queue_size = 2)
         
@@ -215,10 +182,6 @@ class RealsenseTracker():
         marker.pose.position.x = pos[0]
         marker.pose.position.y = pos[1]
         marker.pose.position.z = pos[2]
-        marker.pose.orientation.x = 0
-        marker.pose.orientation.y = 0
-        marker.pose.orientation.z = 0
-        marker.pose.orientation.w = 0
         
         return marker
             
@@ -231,10 +194,6 @@ class RealsenseTracker():
         y = 0
         z = 0
         
-        # R = smb.rpy2r(-np.pi/2, np.pi/2, 0, order='xyz')
-        # transform = np.eye(4)
-        # transform[:3,:3] = R
-        
         if self._result is not None:
             
             handesness = self._result.handedness
@@ -246,22 +205,23 @@ class RealsenseTracker():
                       
             for idx in range(len(hand_landmarks)):
                 if handesness[idx][node].category_name == side:
+
+                    for n in nodes_to_average:
+                        u = int(hand_landmarks[idx][n].x*width)
+                        v = int(hand_landmarks[idx][n].y*height)
+                        u_sum += u
+                        v_sum += v
+                        valid_node_count += 1
+                    
+                    if valid_node_count >0:
+                        u_avg = u_sum // valid_node_count
+                        v_avg = v_sum // valid_node_count
+
                     if normalized:
-                        x = hand_landmarks[idx][node].x - 0.5
-                        y = hand_landmarks[idx][node].y - 0.5
+                        x = u_avg/width - 0.5
+                        y = v_avg/height - 0.5
                         z = 0
                     else:
-                        for n in nodes_to_average:
-                            u = int(hand_landmarks[idx][n].x*width)
-                            v = int(hand_landmarks[idx][n].y*height)
-                            u_sum += u
-                            v_sum += v
-                            valid_node_count += 1
-                        
-                        if valid_node_count >0:
-                            u_avg = u_sum // valid_node_count
-                            v_avg = v_sum // valid_node_count
-
                         print(f"raw depth data {self._depth_img[v,u]}")
                         depth_filtered = RealsenseTracker.apply_bilateral_filter(self._depth_img.copy())
                         depth = depth_filtered[v_avg,u_avg] * 1e-3
@@ -297,21 +257,14 @@ class RealsenseTracker():
                             self.kalman.correct(measurement)
                             prediction = self.kalman.predict()
 
-                            u = int(prediction[0])
-                            v = int(prediction[1])
-                            
-                            u = np.clip(u, 0, width - 1)
-                            v = np.clip(v, 0, height - 1)
-                                                        
+                            u = np.clip(int(prediction[0]), 0, width - 1)
+                            v = np.clip(int(prediction[1]), 0, height - 1)
                         
                         x = (u - self._CX)*depth/self._FX
                         y = (v - self._CY)*depth/self._FY
                         z = depth
                         print(f'depth after filtering {depth}')
 
-                        # pos = np.asarray([x,y,z,1])
-                        # pos_tf = self._cam_transform @ pos
-                        
                         self._marker_pub.publish(RealsenseTracker.create_marker([x,y,z]))
 
         return x, y, z       

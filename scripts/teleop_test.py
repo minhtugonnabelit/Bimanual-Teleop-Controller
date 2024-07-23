@@ -29,7 +29,7 @@ class BMCP:
         self.controller = PR2Controller(
             rate=BMCP._CONTROL_RATE, joystick=self.joystick, config=config, data_plotter=self._data_plot)
         self.controller.set_manip_thresh(BMCP._MANIP_THRESH)
-        # self.controller.move_to_neutral()
+        self.controller.move_to_neutral()
         self._right_arm = self.controller.get_arm_controller('r')
         self._left_arm = self.controller.get_arm_controller('l')
         rospy.loginfo('Robot is in neutral position')
@@ -65,15 +65,15 @@ class BMCP:
         self._state = 'Done'
 
     def hand_tracker_handler(self):
-        normalized_vec = False
+        normalized_vec = True
         kp = 0.5
         kd = 0.2
         while self._state != 'Done':
             x, y, z = self.camera.get_wrist_point(side='Right', normalized=normalized_vec)
             if normalized_vec:
-
-                if self.camera.get_gesture() != []:
-                    if self.camera.get_gesture()[0][0].category_name == 'Closed_Fist':
+                gesture = self.camera.get_gesture()
+                if gesture != []:
+                    if gesture[0][0].category_name == 'Closed_Fist':
                         cur_e = np.asarray([-x, y])
                         cmd_vel = kp*cur_e + kd*(cur_e - self._prev_e)
                         self._prev_e = cur_e.copy()
