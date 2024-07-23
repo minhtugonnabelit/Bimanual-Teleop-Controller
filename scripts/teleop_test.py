@@ -66,7 +66,7 @@ class BMCP:
 
     def hand_tracker_handler(self):
         normalized_vec = False
-        kp = 0.8
+        kp = 0.5
         kd = 0.2
         while self._state != 'Done':
             x, y, z = self.camera.get_wrist_point(side='Right', normalized=normalized_vec)
