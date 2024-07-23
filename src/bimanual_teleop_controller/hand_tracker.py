@@ -161,9 +161,9 @@ class RealsenseTracker():
         self._last_valid_time = None
         self._depth_latency = 1.0
         
-        R = smb.rpy2r(-np.pi/2, np.pi/2, 0, order='xyz')
-        self._cam_transform = np.eye(4)
-        self._cam_transform[:3,:3] = R
+        # R = smb.rpy2r(-np.pi/2, np.pi/2, 0, order='xyz')
+        # self._cam_transform = np.eye(4)
+        # self._cam_transform[:3,:3] = R
               
         self._marker_pub = rospy.Publisher("/visualization_marker", Marker, queue_size = 2)
         
@@ -193,7 +193,7 @@ class RealsenseTracker():
     def create_marker(pos):
         marker = Marker()
 
-        marker.header.frame_id = "rs_camera_aligned_depth_to_color_frame"
+        marker.header.frame_id = "rs_camera_color_optical_frame"
         marker.header.stamp = rospy.Time.now()
 
         # set shape, Arrow: 0; Cube: 1 ; Sphere: 2 ; Cylinder: 3
@@ -231,9 +231,9 @@ class RealsenseTracker():
         y = 0
         z = 0
         
-        R = smb.rpy2r(-np.pi/2, np.pi/2, 0, order='xyz')
-        transform = np.eye(4)
-        transform[:3,:3] = R
+        # R = smb.rpy2r(-np.pi/2, np.pi/2, 0, order='xyz')
+        # transform = np.eye(4)
+        # transform[:3,:3] = R
         
         if self._result is not None:
             
@@ -309,10 +309,10 @@ class RealsenseTracker():
                         z = depth
                         print(f'depth after filtering {depth}')
 
-                        pos = np.asarray([x,y,z,1])
-                        pos_tf = self._cam_transform @ pos
+                        # pos = np.asarray([x,y,z,1])
+                        # pos_tf = self._cam_transform @ pos
                         
-                        self._marker_pub.publish(RealsenseTracker.create_marker(pos_tf[0:3]))
+                        self._marker_pub.publish(RealsenseTracker.create_marker([x,y,z]))
 
         return x, y, z       
     
