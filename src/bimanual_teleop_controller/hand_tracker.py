@@ -37,7 +37,7 @@ class HandTracker():
                                                num_hands=2)
         self.detector = vision.GestureRecognizer.create_from_options(options)
 
-    def result_callback(self, result: mp.tasks.vision.GestureRecognizerResult, timestamp_ms: int):
+    def result_callback(self, result: mp.tasks.vision.GestureRecognizerResult, output_img : mp.Image, timestamp_ms: int):
         self._result = result
         self._timestamp_ms = timestamp_ms
 
