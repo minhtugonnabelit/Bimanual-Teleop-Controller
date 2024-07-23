@@ -8,7 +8,7 @@ import numpy as np
 from scipy import linalg
 from swift import Swift
 
-from bimanual_controller.utility import *
+from bimanual_teleop_controller.utility import *
 
 pr2 = rtb.models.PR2()
 qtest = np.zeros(31)

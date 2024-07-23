@@ -6,11 +6,11 @@ import time
 import os
 
 import rospy
-from bimanual_controller.utility import *
-from bimanual_controller.math_utils import CalcFuncs
-from bimanual_controller.pr2_controller import PR2Controller
-from bimanual_controller.joystick_controller import JoystickController as jsk
-
+from bimanual_teleop_controller.utility import *
+from bimanual_teleop_controller.math_utils import CalcFuncs
+from bimanual_teleop_controller.pr2_controller import PR2Controller
+from bimanual_teleop_controller.joystick_controller import JoystickController as jsk
+from bimanual_teleop_controller.hand_tracker import RealsenseTracker
 
 class BMCP:
 
@@ -25,10 +25,11 @@ class BMCP:
         self._data_plot = data_plot
         self._motion_tracker = rospy.get_param('~motion_tracker', False)
         self.joystick = jsk(motion_tracker=self._motion_tracker)
+        self.camera = RealsenseTracker()
         self.controller = PR2Controller(
             rate=BMCP._CONTROL_RATE, joystick=self.joystick, config=config, data_plotter=self._data_plot)
         self.controller.set_manip_thresh(BMCP._MANIP_THRESH)
-        self.controller.move_to_neutral()
+        # self.controller.move_to_neutral()
         self._right_arm = self.controller.get_arm_controller('r')
         self._left_arm = self.controller.get_arm_controller('l')
         rospy.loginfo('Robot is in neutral position')
@@ -48,6 +49,11 @@ class BMCP:
             target=self.base_controller_handler)
         self._data_recording_thread = threading.Thread(
             target=self.data_recording_handler)
+        
+        self._prev_e = np.asarray([0,0])
+        self._hand_tracker_thread = threading.Thread(
+            target=self.hand_tracker_handler)
+        
 
     def switch_to_individual_control(self):
         self._state = 'individual'
@@ -57,6 +63,26 @@ class BMCP:
 
     def stop(self):
         self._state = 'Done'
+
+    def hand_tracker_handler(self):
+        normalized_vec = False
+        kp = 0.8
+        kd = 0.2
+        while self._state != 'Done':
+            x, y, z = self.camera.get_wrist_point(side='Right', normalized=normalized_vec)
+            if normalized_vec:
+
+                if self.camera.get_gesture() != []:
+                    if self.camera.get_gesture()[0][0].category_name == 'Closed_Fist':
+                        cur_e = np.asarray([-x, y])
+                        cmd_vel = kp*cur_e + kd*(cur_e - self._prev_e)
+                        self._prev_e = cur_e.copy()
+                        self.controller.move_head(cmd_vel)
+            else:
+                # print([x, y, z])
+                pass
+            
+            
 
     # Initial teleoperation function with XBOX joystick
     def teleop_test(self):
@@ -77,6 +103,7 @@ class BMCP:
         self.controller.start_jg_vel_controller()
         self._control_signal_thread.start()
         self._base_controller_thread.start()
+        self._hand_tracker_thread.start()
 
         rospy.sleep(1)
 
@@ -86,6 +113,7 @@ class BMCP:
 
             qdot = np.zeros(14)
             joy_msg = self.joystick.get_joy_msg()
+        
 
             if joy_msg[1][self._system_halt_index]:
 
@@ -97,6 +125,7 @@ class BMCP:
                 rospy.loginfo('Control signal thread joined.')
                 self._base_controller_thread.join()
                 rospy.loginfo('Base controller thread joined.')
+                self._hand_tracker_thread.join()
                 if self._data_plot:
                     self._data_recording_thread.join()
                     rospy.loginfo('Data recording thread joined.')

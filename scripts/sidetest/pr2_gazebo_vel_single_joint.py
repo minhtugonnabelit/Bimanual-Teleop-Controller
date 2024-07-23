@@ -9,8 +9,8 @@ from pr2_controllers_msgs.msg import Pr2GripperCommand
 from pr2_mechanism_msgs.srv import SwitchController
 
 # from fakePR2 import FakePR2
-from bimanual_controller.utility import *
-from bimanual_controller.fakePR2 import FakePR2
+from bimanual_teleop_controller.utility import *
+from bimanual_teleop_controller.fake_pr2 import FakePR2
 
 LEFT_SAMPLE_JOINTSTATES = [np.pi/6,
                            np.pi/6,

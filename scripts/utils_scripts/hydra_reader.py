@@ -5,8 +5,8 @@ from geometry_msgs.msg import TwistStamped
 from sensor_msgs.msg import Joy
 from std_msgs.msg import Float64MultiArray
 
-from bimanual_controller.pr2_controller import PR2Controller
-from bimanual_controller.utility import *
+from bimanual_teleop_controller.pr2_controller import PR2Controller
+from bimanual_teleop_controller.utility import *
 
 
 

@@ -14,8 +14,8 @@ import matplotlib.pyplot as plt
 import time
 from scipy import linalg, optimize
 
-from bimanual_controller.utility import *
-from bimanual_controller.fakePR2 import FakePR2
+from bimanual_teleop_controller.utility import *
+from bimanual_teleop_controller.fake_pr2 import FakePR2
 
 
 class PR2Controller:

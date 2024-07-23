@@ -7,7 +7,7 @@ from scipy import linalg
 from copy import deepcopy
 import threading
 
-from bimanual_controller.utility import *
+from bimanual_teleop_controller.utility import *
 
 
 class FakePR2:

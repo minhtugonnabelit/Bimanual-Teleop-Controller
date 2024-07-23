@@ -1,7 +1,7 @@
 import rospy
 
-from bimanual_controller.utility import CONTROL_RATE
-from bimanual_controller.pr2_controller import PR2Controller
+from bimanual_teleop_controller.utility import CONTROL_RATE
+from bimanual_teleop_controller.pr2_controller import PR2Controller
 
 def main():
 

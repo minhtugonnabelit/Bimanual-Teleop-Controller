@@ -8,7 +8,7 @@ import roboticstoolbox as rtb
 from swift import Swift
 
 # Import custom utility functions
-from bimanual_controller.utility import *
+from bimanual_teleop_controller.utility import *
 # from scripts.sidetest.fakePR2 import FakePR2
 
 pr2 = rtb.models.PR2()
