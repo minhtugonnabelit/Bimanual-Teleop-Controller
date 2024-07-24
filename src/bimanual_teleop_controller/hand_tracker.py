@@ -13,6 +13,7 @@ from cv_bridge import CvBridge, CvBridgeError
 from visualization_msgs.msg import Marker
 
 import time
+import matplotlib.pyplot as plt
 
 MARGIN = 10  # pixels
 FONT_SIZE = 1
@@ -101,8 +102,9 @@ class RealsenseTracker():
         
         self._result = None
         self._handtracker = HandTracker()
+        self.elapsed_times = []
         
-        self._cam_inf = rospy.wait_for_message('/rs_camera/color/camera_info', CameraInfo)
+        self._cam_inf = rospy.wait_for_message('/camera/color/camera_info', CameraInfo)
         self._FX = self._cam_inf.K[0] 
         self._FY = self._cam_inf.K[4]
         self._CX = self._cam_inf.K[2]
@@ -111,10 +113,10 @@ class RealsenseTracker():
         self._bridge = CvBridge()
         
         self._img = None
-        self._rgb_sub = rospy.Subscriber("/rs_camera/color/image_raw", Image, self.rgb_callback)
+        self._rgb_sub = rospy.Subscriber("/camera/color/image_raw", Image, self.rgb_callback)
         
         self._depth_img = None
-        self._depth_sub = rospy.Subscriber("/rs_camera/aligned_depth_to_color/image_raw", Image, self.depth_callback)
+        self._depth_sub = rospy.Subscriber("/camera/aligned_depth_to_color/image_raw", Image, self.depth_callback)
         
         self.kalman = cv2.KalmanFilter(4, 2)
         self.kalman.measurementMatrix = np.array([[1,0,0,0], 
@@ -127,7 +129,7 @@ class RealsenseTracker():
         
         self.kalman.processNoiseCov = np.eye(4, dtype=np.float32) * 1e-2  
               
-        self._jump_thresh = 1
+        self._jump_thresh = 0.4
         self._prev_depth = None
         self._last_valid_time = None
         self._depth_latency = 1.0
@@ -160,7 +162,7 @@ class RealsenseTracker():
     def create_marker(pos):
         marker = Marker()
 
-        marker.header.frame_id = "rs_camera_color_optical_frame"
+        marker.header.frame_id = "camera_color_optical_frame"
         marker.header.stamp = rospy.Time.now()
 
         # set shape, Arrow: 0; Cube: 1 ; Sphere: 2 ; Cylinder: 3
@@ -194,6 +196,8 @@ class RealsenseTracker():
         y = 0
         z = 0
         
+        start_time = time.time()
+
         if self._result is not None:
             
             handesness = self._result.handedness
@@ -205,7 +209,8 @@ class RealsenseTracker():
                       
             for idx in range(len(hand_landmarks)):
                 if handesness[idx][node].category_name == side:
-
+                    
+                    # Average the x and y coordinates of the selected nodes for middle of the palm
                     for n in nodes_to_average:
                         u = int(hand_landmarks[idx][n].x*width)
                         v = int(hand_landmarks[idx][n].y*height)
@@ -222,8 +227,8 @@ class RealsenseTracker():
                         y = v_avg/height - 0.5
                         z = 0
                     else:
-                        print(f"raw depth data {self._depth_img[v,u]}")
-                        depth_filtered = RealsenseTracker.apply_bilateral_filter(self._depth_img.copy())
+
+                        depth_filtered = self._depth_img.copy() 
                         depth = depth_filtered[v_avg,u_avg] * 1e-3
                         
                         # Handle depth outliers
@@ -263,11 +268,52 @@ class RealsenseTracker():
                         x = (u - self._CX)*depth/self._FX
                         y = (v - self._CY)*depth/self._FY
                         z = depth
-                        print(f'depth after filtering {depth}')
+                        # print(f'depth after filtering {depth}')
+                        print(f'{side} hand coordinate: {[x,y,z]}')
 
                         self._marker_pub.publish(RealsenseTracker.create_marker([x,y,z]))
-
+        else:
+            rospy.logwarn('No hand detected')
+            return None
+        
+        # annotated_image = HandTracker.draw_landmarks_on_image(self._img, self._result)
+        # cv2.imshow('Hand Tracking', annotated_image)
+        # cv2.waitKey(1)
+        elapsed_time = time.time() - start_time
+        self.elapsed_times.append(elapsed_time)
+        rospy.logdebug(f'Elapsed time: {elapsed_time:.3f}')
         return x, y, z       
     
     def get_gesture(self):
         return self._handtracker.get_gesture()
+
+
+if __name__ == '__main__':
+        
+    rospy.init_node('hand_tracker', log_level=rospy.DEBUG)
+    tracker = RealsenseTracker()
+    
+    rate = rospy.Rate(50)
+    
+    # while not rospy.is_shutdown():
+        
+    #     if tracker._img is not None:
+    #         point = tracker.get_wrist_point('Right', normalized=False)
+        
+    #     rate.sleep()
+        
+    # cv2.destroyAllWindows()
+
+    try:
+        while not rospy.is_shutdown():
+            if tracker._img is not None:
+                point = tracker.get_wrist_point('Right', normalized=False)
+            rate.sleep()
+    finally:
+        cv2.destroyAllWindows()
+        # Plotting the elapsed times
+        plt.plot(tracker.elapsed_times)
+        plt.xlabel('Frame')
+        plt.ylabel('Elapsed Time (s)')
+        plt.title('Elapsed Time per Frame')
+        plt.show()
