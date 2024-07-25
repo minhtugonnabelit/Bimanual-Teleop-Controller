@@ -10,7 +10,6 @@ from bimanual_teleop_controller.utility import *
 from bimanual_teleop_controller.math_utils import CalcFuncs
 from bimanual_teleop_controller.pr2_controller import PR2Controller
 from bimanual_teleop_controller.joystick_controller import JoystickController as jsk
-from bimanual_teleop_controller.hand_tracker import RealsenseTracker
 
 class BMCP:
 
@@ -25,7 +24,6 @@ class BMCP:
         self._data_plot = data_plot
         self._motion_tracker = rospy.get_param('~motion_tracker', False)
         self.joystick = jsk(motion_tracker=self._motion_tracker)
-        self.camera = RealsenseTracker()
         self.controller = PR2Controller(
             rate=BMCP._CONTROL_RATE, joystick=self.joystick, config=config, data_plotter=self._data_plot)
         self.controller.set_manip_thresh(BMCP._MANIP_THRESH)
@@ -50,9 +48,9 @@ class BMCP:
         self._data_recording_thread = threading.Thread(
             target=self.data_recording_handler)
         
-        self._prev_e = np.asarray([0,0])
-        self._hand_tracker_thread = threading.Thread(
-            target=self.hand_tracker_handler)
+        # self._prev_e = np.asarray([0,0])
+        # self._hand_tracker_thread = threading.Thread(
+        #     target=self.hand_tracker_handler)
         
 
     def switch_to_individual_control(self):
@@ -69,18 +67,20 @@ class BMCP:
         kp = 0.5
         kd = 0.2
         while self._state != 'Done':
-            x, y, z = self.camera.get_wrist_point(side='Right', normalized=normalized_vec)
-            if normalized_vec:
-                gesture = self.camera.get_gesture()
-                if gesture != []:
-                    if gesture[0][0].category_name == 'Closed_Fist':
-                        cur_e = np.asarray([-x, y])
-                        cmd_vel = kp*cur_e + kd*(cur_e - self._prev_e)
-                        self._prev_e = cur_e.copy()
-                        self.controller.move_head(cmd_vel)
-            else:
-                # print([x, y, z])
-                pass
+            # x, y, z = self.camera.get_wrist_point(side='Right', normalized=normalized_vec)
+            # if normalized_vec:
+            #     gesture = self.camera.get_gesture()
+            #     if gesture != []:
+            #         if gesture[0][0].category_name == 'Closed_Fist':
+            #             cur_e = np.asarray([-x, y])
+            #             cmd_vel = kp*cur_e + kd*(cur_e - self._prev_e)
+            #             self._prev_e = cur_e
+            #             self.controller.move_head(cmd_vel)
+            # else:
+            #     # print([x, y, z])
+            #     pass
+            
+            pass
             
             
 
@@ -103,7 +103,8 @@ class BMCP:
         self.controller.start_jg_vel_controller()
         self._control_signal_thread.start()
         self._base_controller_thread.start()
-        self._hand_tracker_thread.start()
+        # self._hand_tracker_thread.start()
+        # self._data_recording_thread.start()
 
         rospy.sleep(1)
 
@@ -125,7 +126,7 @@ class BMCP:
                 rospy.loginfo('Control signal thread joined.')
                 self._base_controller_thread.join()
                 rospy.loginfo('Base controller thread joined.')
-                self._hand_tracker_thread.join()
+                # self._hand_tracker_thread.join()
                 if self._data_plot:
                     self._data_recording_thread.join()
                     rospy.loginfo('Data recording thread joined.')
@@ -278,8 +279,7 @@ class BMCP:
 
                 self.controller.store_joint_positions()
                 self.controller.store_joint_efforts()
-                self.controller.store_joint_velocities(
-                    'right', self._qdot_right)
+                self.controller.store_joint_velocities('right', self._qdot_right)
                 self.controller.store_joint_velocities('left', self._qdot_left)
 
                 self.controller.store_manipulability()
