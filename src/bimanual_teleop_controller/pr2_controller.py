@@ -154,7 +154,7 @@ class PR2Controller:
             twist_w_in_ee = twist   
         jacob = self.get_jacobian(side=side)
 
-        alpha = 2 # gain value for manipulability gradient
+        alpha = 0.5 # gain value for manipulability gradient
         qdot_sec = alpha * self._virtual_robot.manipulability_gradient(side=side, eps=0.01)
 
         qdot = np.linalg.pinv(jacob) @ twist_w_in_ee + \
@@ -234,6 +234,19 @@ class PR2Controller:
         traj_msg.joint_names = ['head_pan_joint', 'head_tilt_joint']
         traj_msg.points = [JointTrajectoryPoint()]
         traj_msg.points[0].positions =   np.array(self.get_joint_angles(traj_msg.joint_names)) + vel_cmd
+        traj_msg.points[0].velocities = [0, 0]
+        traj_msg.points[0].accelerations = [0, 0]
+        traj_msg.points[0].time_from_start = rospy.Duration(0.5)
+
+        self._head_controller_pub.publish(traj_msg)
+    
+    def move_head_to(self, joint_pos):
+        
+        traj_msg =  JointTrajectory()
+        traj_msg.header.stamp = rospy.Time.now()
+        traj_msg.joint_names = ['head_pan_joint', 'head_tilt_joint']
+        traj_msg.points = [JointTrajectoryPoint()]
+        traj_msg.points[0].positions = joint_pos
         traj_msg.points[0].velocities = [0, 0]
         traj_msg.points[0].accelerations = [0, 0]
         traj_msg.points[0].time_from_start = rospy.Duration(1)

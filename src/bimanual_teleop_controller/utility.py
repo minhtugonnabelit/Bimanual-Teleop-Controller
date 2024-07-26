@@ -12,18 +12,16 @@ from bimanual_teleop_controller.math_utils import CalcFuncs
 from typing import Union
 ArrayLike = Union[list, np.ndarray, tuple, set]
 
-class Config:
-    @classmethod
-    def load_config(cls, file_path):
-        with open(file_path, 'r') as stream:
-            try:
-                config = yaml.safe_load(stream)
-            except yaml.YAMLError as exc:
-                print(exc)
-        return config
+def load_config(file_path):
+    with open(file_path, 'r') as stream:
+        try:
+            config = yaml.safe_load(stream)
+        except yaml.YAMLError as exc:
+            print(exc)
+    return config
 
 cfg_path = rospkg.RosPack().get_path('bimanual_teleop_controller') + '/config/bmcp_cfg.yaml'
-config = Config.load_config(cfg_path)
+config = load_config(cfg_path)
 
 class AnimateFuncs:
 

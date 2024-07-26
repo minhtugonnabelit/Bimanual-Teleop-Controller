@@ -7,10 +7,10 @@ from mediapipe.framework.formats import landmark_pb2
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
-import rospy, rospkg
+import rospy, rospkg, tf, tf2_ros
 from sensor_msgs.msg import Image, CameraInfo
 from cv_bridge import CvBridge, CvBridgeError
-from visualization_msgs.msg import Marker
+from visualization_msgs.msg import Marker, MarkerArray
 
 import time
 import matplotlib.pyplot as plt
@@ -110,6 +110,7 @@ class RealsenseTracker():
             
         self._rate   = rospy.Rate(100)
         self._handtracker = HandTracker()
+        self._processing_thread = threading.Thread(target=self._process_results)
         
         self._cam_inf = rospy.wait_for_message('/rs_camera/color/camera_info', CameraInfo)
         self._FX = self._cam_inf.K[0] 
@@ -128,6 +129,11 @@ class RealsenseTracker():
         self._rgb_sub = rospy.Subscriber("/rs_camera/color/image_raw", Image, self.rgb_callback)
         self._depth_sub = rospy.Subscriber("/rs_camera/aligned_depth_to_color/image_raw", Image, self.depth_callback)
         
+        self._jump_thresh = 1
+        self._prev_depth = None
+        self._last_valid_time = None
+        self._depth_latency = 1.0
+        
         self.kalman = cv2.KalmanFilter(4, 2)
         self.kalman.measurementMatrix = np.array([[1,0,0,0], 
                                                   [0,1,0,0]], np.float32)
@@ -139,15 +145,15 @@ class RealsenseTracker():
         
         self.kalman.processNoiseCov = np.eye(4, dtype=np.float32) * 1e-2  
               
-        self._jump_thresh = 1
-        self._prev_depth = None
-        self._last_valid_time = None
-        self._depth_latency = 1.0
-              
         self._marker_pub = rospy.Publisher("/visualization_marker", Marker, queue_size = 2)
-
-        self._processing_thread = threading.Thread(target=self._process_results)
-
+        self._markers_pub = rospy.Publisher("/hand_markers", MarkerArray, queue_size=10)
+        
+        # self._tf_broadcaster = tf.TransformBroadcaster()
+        # self._tf2_broadcaster = tf2_ros.TransformBroadcaster()
+        # self._tf2_listener = tf2_ros.Buffer()
+        # self._tf2_listen = tf2_ros.TransformListener(self._tf2_listener)
+        
+        # self._tf2_listener.lookup_transform
         rospy.logdebug('Initiating camera tracker driver')
         
     def stop(self):
@@ -198,7 +204,7 @@ class RealsenseTracker():
 
             if self._result is not None:
                 # Process the result to compute wrist point
-                wrist_point = self.get_wrist_point(result = self._result, side = 'Right', normalized=False)
+                wrist_point = self.get_wrist_point(result = self._result, normalized=False)
 
                 # Publish the marker
                 # self._marker_pub.publish(RealsenseTracker.create_marker(wrist_point))
@@ -206,15 +212,18 @@ class RealsenseTracker():
             self._rate.sleep()
     
     @staticmethod    
-    def create_marker(pos):
+    def create_marker(namespace, text, pos, id=0):
         marker = Marker()
 
         marker.header.frame_id = "rs_camera_color_optical_frame"
         marker.header.stamp = rospy.Time.now()
 
         # set shape, Arrow: 0; Cube: 1 ; Sphere: 2 ; Cylinder: 3
-        marker.type = 2
-        marker.id = 0
+        marker.type = 2 if text == 'Closed_Fist' else 1
+        marker.id = id
+        marker.action = Marker.ADD
+        marker.ns = namespace
+        marker.text = text
 
         # Set the scale of the marker
         marker.scale.x = .05
@@ -226,6 +235,12 @@ class RealsenseTracker():
         marker.color.g = 1.0
         marker.color.b = 0.0
         marker.color.a = 1.0
+        
+        if namespace == 'Right':
+            marker.color.r = 1.0
+            marker.color.g = 0.0
+            marker.color.b = 0.0
+            marker.color.a = 1.0
 
         # Set the pose of the marker
         marker.pose.position.x = pos[0]
@@ -234,92 +249,106 @@ class RealsenseTracker():
         
         return marker
             
-    def get_wrist_point(self, result : mp.tasks.vision.GestureRecognizerResult, side, node=0, normalized=True):
+    def get_wrist_point(self, result : mp.tasks.vision.GestureRecognizerResult, node=0, normalized=True):
         
         # height, width, _ = self._img.shape
         nodes_to_average = [0, 1, 5, 9, 13, 17]
         
-        x = 0
-        y = 0
-        z = 0
+        sides = ['Left','Right']
+        # markers = []
+        markers = MarkerArray()
         
-        if self._data_plot:
+        if self._data_plot: 
             start_time = time.time()
         
         if result is not None:
             handesness = result.handedness
             hand_landmarks = result.hand_landmarks
+            gestures = result.gestures
 
-            u_sum = 0
-            v_sum = 0
-            valid_node_count = 0  
-                      
-            for idx in range(len(hand_landmarks)):
-                if handesness[idx][node].category_name == side:
-                    
-                    # Average the x and y coordinates of the selected nodes for middle of the palm
-                    for n in nodes_to_average:
-                        # u = int(hand_landmarks[idx][n].x*self._w)
-                        # v = int(hand_landmarks[idx][n].y*self._h)
-                        u = hand_landmarks[idx][n].x
-                        v = hand_landmarks[idx][n].y
-                        u_sum += u
-                        v_sum += v
-                        valid_node_count += 1
-                    if valid_node_count >0:
-                        u_avg = u_sum / valid_node_count
-                        v_avg = v_sum / valid_node_count
-                        
-                    if normalized:
-                        x = u_avg - 0.5
-                        y = v_avg - 0.5
-                        z = 0
-                    else:
-                        u_avg = int(u_avg*self._w)
-                        v_avg = int(v_avg*self._h)
-                        depth = np.round(self._depth_img[v_avg,u_avg] * 1e-3, 3)
-                        
-                        # Handle depth outliers
-                        if depth == 0.0 or depth > 10:  
-                            depth = np.nan     
+            for side in sides:
+
+                u_sum = 0
+                v_sum = 0
+                valid_node_count = 0 
+                
+                x = 0
+                y = 0
+                z = 0
+                gesture = ''
+                     
+                for idx in range(len(hand_landmarks)):
+                    if handesness[idx][node].category_name == side:
+                                                
+                        # Average the x and y coordinates of the selected nodes for middle of the palm
+                        for n in nodes_to_average:
+                            u = hand_landmarks[idx][n].x
+                            v = hand_landmarks[idx][n].y
+                            u_sum += u
+                            v_sum += v
+                            valid_node_count += 1
+                        if valid_node_count >0:
+                            u_avg = u_sum / valid_node_count
+                            v_avg = v_sum / valid_node_count
                             
-                        # Handle jump and invalid depth value
-                        current_time = time.time()
-                        if self._prev_depth is not None:
-                            if np.isnan(depth):
-                                if (current_time - self._last_valid_time) < self._depth_latency:
-                                    rospy.logwarn('NaN depth value detected, using previous valid depth')
-                                    depth = self._prev_depth
-                                else:
-                                    rospy.logwarn('NaN depth value persisted for too long')
+                            if normalized:
+                                x = u_avg - 0.5
+                                y = v_avg - 0.5
+                                z = 0
                             else:
-                                jump_detected = np.abs(depth - self._prev_depth) > self._jump_thresh
-                                if jump_detected:
-                                    rospy.logwarn('Invalid jump detected in depth data')
-                                    depth = self._prev_depth
+                                u_avg = int(u_avg*self._w)
+                                v_avg = int(v_avg*self._h)
+                                depth = np.round(self._depth_img[v_avg,u_avg] * 1e-3, 3)
+                                
+                                # Handle depth outliers
+                                if depth == 0.0 or depth > 10:  
+                                    depth = np.nan     
+                                    
+                                # Handle jump and invalid depth value
+                                current_time = time.time()
+                                if self._prev_depth is not None:
+                                    if np.isnan(depth):
+                                        if (current_time - self._last_valid_time) < self._depth_latency:
+                                            rospy.logwarn('NaN depth value detected, using previous valid depth')
+                                            depth = self._prev_depth
+                                        else:
+                                            rospy.logwarn('NaN depth value persisted for too long')
+                                    else:
+                                        jump_detected = np.abs(depth - self._prev_depth) > self._jump_thresh
+                                        if jump_detected:
+                                            rospy.logwarn('Invalid jump detected in depth data')
+                                            depth = self._prev_depth
+                                        else:
+                                            self._prev_depth = depth
+                                            self._last_valid_time = current_time
                                 else:
                                     self._prev_depth = depth
                                     self._last_valid_time = current_time
-                        else:
-                            self._prev_depth = depth
-                            self._last_valid_time = current_time
-                        
-                        # Kalman filter for smoothing
-                        measurement = np.array([[np.float32(u_avg)], [np.float32(v_avg)]], np.float32)
-                        self.kalman.correct(measurement)
-                        prediction = self.kalman.predict()
+                                
+                                # Kalman filter for smoothing
+                                measurement = np.array([[np.float32(u_avg)], [np.float32(v_avg)]], np.float32)
+                                self.kalman.correct(measurement)
+                                prediction = self.kalman.predict()
 
-                        u = np.clip(int(prediction[0]), 0, self._w - 1)
-                        v = np.clip(int(prediction[1]), 0, self._h - 1)
-                        
-                        # Transform between coordinate
-                        x = np.round((u - self._CX)*depth/self._FX, 3)
-                        y = np.round((v - self._CY)*depth/self._FY, 3)
-                        z = depth
+                                u = np.clip(int(prediction[0]), 0, self._w - 1)
+                                v = np.clip(int(prediction[1]), 0, self._h - 1)
+                                
+                                # Transform between coordinate
+                                x = np.round((u - self._CX)*depth/self._FX, 3)
+                                y = np.round((v - self._CY)*depth/self._FY, 3)
+                                z = depth
 
                         print(f'{side} hand coordinate: {[x,y,z]}')
+                        gesture = gestures[idx][0].category_name
+                        marker = RealsenseTracker.create_marker(namespace=side,
+                                                                text=gesture,
+                                                                pos = [x,y,z])
+                        markers.markers.append(marker)
 
-                        self._marker_pub.publish(RealsenseTracker.create_marker([x,y,z]))
+                            # self._marker_pub.publish(RealsenseTracker.create_marker([x,y,z]))
+                        
+            self._markers_pub.publish(markers)
+
         else:
             rospy.logwarn('No hand detected')
             return None
@@ -335,21 +364,4 @@ class RealsenseTracker():
     
     def get_gesture(self):
         return self._handtracker.get_gesture()
-
-
-if __name__ == '__main__':
-        
-    rospy.init_node('hand_tracker', log_level=rospy.DEBUG)
-    tracker = RealsenseTracker()
-    
-    rate = rospy.Rate(50)
-    
-    while not rospy.is_shutdown():
-        
-        if tracker._img is not None:
-            point = tracker.get_wrist_point('Right', normalized=False)
-        
-        rate.sleep()
-        
-    cv2.destroyAllWindows()
 

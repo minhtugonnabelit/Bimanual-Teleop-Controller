@@ -23,15 +23,22 @@ class BMCP:
 
         self._data_plot = data_plot
         self._motion_tracker = rospy.get_param('~motion_tracker', False)
+        
         self.joystick = jsk(motion_tracker=self._motion_tracker)
-        self.controller = PR2Controller(
-            rate=BMCP._CONTROL_RATE, joystick=self.joystick, config=config, data_plotter=self._data_plot)
+        
+        self.controller = PR2Controller(rate=BMCP._CONTROL_RATE, 
+                                        joystick=self.joystick, 
+                                        config=config, 
+                                        data_plotter=self._data_plot)
+        
         self.controller.set_manip_thresh(BMCP._MANIP_THRESH)
-        self.controller.move_to_neutral()
+        # self.controller.move_to_neutral()
+        # self.controller.move_head_to([0.0, 0.2])
+        
         self._right_arm = self.controller.get_arm_controller('r')
         self._left_arm = self.controller.get_arm_controller('l')
         rospy.loginfo('Robot is in neutral position')
-        rospy.sleep(3)
+        rospy.sleep(1)
 
         # State variables
         self._constraint_is_set = False
