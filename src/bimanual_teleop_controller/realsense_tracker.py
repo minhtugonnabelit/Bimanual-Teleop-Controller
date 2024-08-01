@@ -15,13 +15,14 @@ from bimanual_teleop_controller.utility import *
 
 class RealsenseTracker():
 
+    # TODO: Add publisher for hand node velocity tracking
     def __init__(self, data_plot = False) -> None:
         
         self._data_plot = data_plot
         if self._data_plot:
             self.elapsed_times = []
             
-        self._rate   = rospy.Rate(config['rate'])
+        self._rate   = rospy.Rate(config['CONTROL_RATE'])
         self._handtracker = HandTracker()
         self._processing_thread = threading.Thread(target=self._process_results)
         

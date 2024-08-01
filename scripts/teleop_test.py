@@ -19,6 +19,8 @@ class BMCP:
     _TWIST_GAIN = config['TWIST_GAIN']
     _DRIFT_GAIN = config['DRIFT_GAIN']
 
+    # TODO Implement hand tracker thread and subscriber for hand motion tracker lookup 
+
     def __init__(self, config, data_plot) -> None:
 
         self._data_plot = data_plot
@@ -47,6 +49,8 @@ class BMCP:
         self._qdot_right = np.zeros(7)
         self._qdot_left = np.zeros(7)
 
+        
+
         self._control_signal_ready = threading.Condition()
         self._control_signal_thread = threading.Thread(
             target=self.control_signal_handler)
@@ -54,6 +58,7 @@ class BMCP:
             target=self.base_controller_handler)
         self._data_recording_thread = threading.Thread(
             target=self.data_recording_handler)
+        
         
         # self._prev_e = np.asarray([0,0])
         # self._hand_tracker_thread = threading.Thread(
@@ -98,6 +103,8 @@ class BMCP:
         """
         rospy.loginfo('Start teleop using joystick')
         constraint_is_set = False
+
+        # TODO: Swap mapping for gesture to be used 
         self._dead_switch_index = self.joystick.dead_switch_index
         self._system_halt_index = self.joystick.system_halt_index
         self._right_arm_index = self.joystick.right_arm_index
@@ -151,6 +158,7 @@ class BMCP:
                 rospy.loginfo(
                     'Constraint is set, switching controllers, started velocity controller thread')
 
+            # TODO: Add twist extraction method for handtracker
             # Once constraint is set, start the teleoperation using
             twist, _ = self.joystick.motion_to_twist(
                 BMCP._TWIST_GAIN) if self._motion_tracker else self.joystick.joy_to_twist(BMCP._TWIST_GAIN)
@@ -195,7 +203,7 @@ class BMCP:
                         qdot, steepness=BMCP._DAMPER_STEEPNESS)
 
             else:
-
+                # TODO: consider setting up the separated controller thread for each arm in this mode
                 if joy_msg[1][self._right_arm_index]:  # left bumper
                     if joy_msg[0][self._dead_switch_index] != 1:
                         qdot[7:] = self.controller.process_arm_movement(side='r',
@@ -219,7 +227,9 @@ class BMCP:
             rospy.logdebug(
                 f'Calculation time: {exec_time:.4f}')
 
+    # TODO: Add method for gesture handling in gripper control
     def handle_gripper(self, arm, joy_msg):
+
         if self._motion_tracker:
             if joy_msg[1][self._gripper_open_index] == 1:
                 arm.open_gripper()
