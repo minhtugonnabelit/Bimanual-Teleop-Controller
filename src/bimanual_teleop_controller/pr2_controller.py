@@ -159,9 +159,7 @@ class PR2Controller:
 
         qdot = np.linalg.pinv(jacob) @ twist_w_in_ee + \
                 CalcFuncs.nullspace_projector(jacob) @ qdot_sec
-                
-        print(qdot)
-        
+                        
         # qdot = CalcFuncs.rmrc(jacob, twist_w_in_ee, w_thresh=manip_thresh)
         
         if joint_limit_damper:

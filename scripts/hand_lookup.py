@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import rospy
-from bimanual_teleop_controller.hand_tracker import RealsenseTracker
+from bimanual_teleop_controller.realsense_tracker import RealsenseTracker
 
 def main():
     try:

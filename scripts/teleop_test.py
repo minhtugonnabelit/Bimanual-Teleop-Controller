@@ -32,8 +32,8 @@ class BMCP:
                                         data_plotter=self._data_plot)
         
         self.controller.set_manip_thresh(BMCP._MANIP_THRESH)
-        # self.controller.move_to_neutral()
-        # self.controller.move_head_to([0.0, 0.2])
+        self.controller.move_to_neutral()
+        self.controller.move_head_to([0.0, 0.2])
         
         self._right_arm = self.controller.get_arm_controller('r')
         self._left_arm = self.controller.get_arm_controller('l')
@@ -110,8 +110,6 @@ class BMCP:
         self.controller.start_jg_vel_controller()
         self._control_signal_thread.start()
         self._base_controller_thread.start()
-        # self._hand_tracker_thread.start()
-        # self._data_recording_thread.start()
 
         rospy.sleep(1)
 
@@ -133,7 +131,7 @@ class BMCP:
                 rospy.loginfo('Control signal thread joined.')
                 self._base_controller_thread.join()
                 rospy.loginfo('Base controller thread joined.')
-                # self._hand_tracker_thread.join()
+
                 if self._data_plot:
                     self._data_recording_thread.join()
                     rospy.loginfo('Data recording thread joined.')

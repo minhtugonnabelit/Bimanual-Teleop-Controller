@@ -12,6 +12,9 @@ from bimanual_teleop_controller.math_utils import CalcFuncs
 from typing import Union
 ArrayLike = Union[list, np.ndarray, tuple, set]
 
+MODEL_PATH = rospkg.RosPack().get_path('bimanual_teleop_controller') + '/config/gesture_recognizer.task'
+CFG_PATH = rospkg.RosPack().get_path('bimanual_teleop_controller') + '/config/bmcp_cfg.yaml'
+
 def load_config(file_path):
     with open(file_path, 'r') as stream:
         try:
@@ -20,8 +23,7 @@ def load_config(file_path):
             print(exc)
     return config
 
-cfg_path = rospkg.RosPack().get_path('bimanual_teleop_controller') + '/config/bmcp_cfg.yaml'
-config = load_config(cfg_path)
+config = load_config(CFG_PATH)
 
 class AnimateFuncs:
 

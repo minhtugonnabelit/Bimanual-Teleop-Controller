@@ -261,7 +261,6 @@ class JoystickController():
     def trigger_constraint_index(self):
         return self._trigger_constraint_index
     
-    
     @property
     def controller_name(self):
         return self._joy_pygame.get_name()
