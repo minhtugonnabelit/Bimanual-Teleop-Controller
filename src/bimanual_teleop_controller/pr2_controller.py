@@ -10,12 +10,11 @@ from pr2_controllers_msgs.msg import Pr2GripperCommand
 from bimanual_teleop_controller.utility import *
 from bimanual_teleop_controller.fake_pr2 import FakePR2
 from bimanual_teleop_controller.arm_controller import ArmController
-from bimanual_teleop_controller.joystick_controller import JoystickController
 
 
 class PR2Controller:
 
-    def __init__(self, rate, joystick : JoystickController, config, data_plotter=False):
+    def __init__(self, rate, config, data_plotter=False):
 
         self._cfg = config
         self._JOINT_NAMES = self._cfg['JOINT_NAMES']
@@ -39,8 +38,6 @@ class PR2Controller:
                                       gripper_cmd_type=Pr2GripperCommand,
                                       robot_base_frame=self._robot_base_frame)
         
-        self._joystick = joystick
-
         self._base_controller_pub = rospy.Publisher(
             '/base_controller/command', Twist, queue_size=10)
         
@@ -81,8 +78,7 @@ class PR2Controller:
         self._virtual_robot.set_states(self._joint_states)
 
     def _clean(self):
-        # if self._joystick.is_rumbled():
-        #     self._joystick.stop_rumble()
+
         self._virtual_robot.shutdown()
         rospy.loginfo('Shutting down the virtual robot')
         PR2Controller.kill_jg_vel_controller()
@@ -175,11 +171,8 @@ class PR2Controller:
         if max_weights > 0.8:
             side = 'left' if side == 'l' else 'right'
             rumble_freq = (max_weights - 0.8)*3
-            # self._joystick.start_rumble(rumble_freq, 2*rumble_freq, 0)
             rospy.logwarn(
                 f"\nJoint limit avoidance mechanism is applied with max weight: {max_weights:.2f} at joint {self._JOINT_NAMES[side][joint_on_max_limit[0]]}")
-        # else:
-        #     self._joystick.stop_rumble() if self._joystick.is_rumbled() else None
 
         return joint_limits_damper
 
@@ -196,11 +189,8 @@ class PR2Controller:
                 side = 'right'
 
             rumble_freq = (max_weights - 0.8)*3
-            # self._joystick.start_rumble(rumble_freq, 2*rumble_freq, 0)
             rospy.logwarn(
                 f"\nJoint limit avoidance mechanism is applied with max weight: {max_weights:.2f} at joint {self._JOINT_NAMES[side][joint_on_max_limit[0]]}")
-        # else :
-            # self._joystick.stop_rumble() if self._joystick.is_rumbled() else None
 
         return joint_limits_damper
 

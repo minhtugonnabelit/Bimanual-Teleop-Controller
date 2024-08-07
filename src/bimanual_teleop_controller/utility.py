@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 
 import rospy, rospkg
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+from geometry_msgs.msg import TwistStamped
+from visualization_msgs.msg import Marker, MarkerArray
 
 from bimanual_teleop_controller.math_utils import CalcFuncs
 
@@ -114,6 +116,57 @@ class ROSUtils:
         joint_traj.points = [traj_point]
 
         return joint_traj
+
+    @staticmethod    
+    def create_marker(namespace, text, pos, id=0):
+        marker = Marker()
+
+        marker.header.frame_id = "camera_color_optical_frame"
+        marker.header.stamp = rospy.Time.now()
+
+        # set shape, Arrow: 0; Cube: 1 ; Sphere: 2 ; Cylinder: 3
+        marker.type = 9 #if text == 'Closed_Fist' else 1
+        marker.id = id
+        marker.action = Marker.ADD
+        marker.ns = namespace
+        marker.text = text
+
+        # Set the scale of the marker
+        marker.scale.x = .05
+        marker.scale.y = .05
+        marker.scale.z = .05
+
+        # Set the color
+        marker.color.r = 0.0
+        marker.color.g = 1.0
+        marker.color.b = 0.0
+        marker.color.a = 1.0
+        
+        if namespace == 'Right':
+            marker.color.r = 1.0
+            marker.color.g = 0.0
+            marker.color.b = 0.0
+            marker.color.a = 1.0
+
+        # Set the pose of the marker
+        marker.pose.position.x = pos[0]
+        marker.pose.position.y = pos[1]
+        marker.pose.position.z = pos[2]
+        
+        return marker
+    
+    @staticmethod
+    def create_twiststamped(twist=np.zeros(6)):
+        ts = TwistStamped()
+        ts.header.frame_id = "camera_color_optical_frame"
+        ts.header.stamp = rospy.Time.now()
+        ts.twist.linear.x = twist[0]
+        ts.twist.linear.y = twist[1]
+        ts.twist.linear.z = twist[2]
+        ts.twist.angular.x = twist[3]
+        ts.twist.angular.y = twist[4]
+        ts.twist.angular.z = twist[5]
+        return ts
 
 
 def plot_joint_velocities(actual_data: np.ndarray, desired_data: np.ndarray, dt=0.001, title='Joint Velocities'):

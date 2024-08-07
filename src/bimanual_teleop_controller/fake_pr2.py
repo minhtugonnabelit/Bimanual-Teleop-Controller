@@ -235,7 +235,7 @@ class FakePR2:
             
         manip = self._robot.jacobm(end=self._arms_frame[side]['end'], start=self._arms_frame[side]['start'])
         manip = manip.reshape(7)
-        # print(manip)
+
         return manip
 
     def get_twist_in_tool_frame(self, side : str, twist : np.ndarray):
