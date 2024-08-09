@@ -23,6 +23,19 @@ class RealsenseTracker():
         self._data_plot = data_plot
         if self._data_plot:
             self.elapsed_times = []
+
+            self._twist = {
+                'Left': {
+                    'x': [],
+                    'y': [],
+                    'z': []
+                },
+                'Right': {
+                    'x': [],
+                    'y': [],
+                    'z': []
+                }
+            }
             
         self._rate   = rospy.Rate(config['CONTROL_RATE'])
         self._handtracker = HandTracker()
@@ -70,27 +83,76 @@ class RealsenseTracker():
         self._markers_pub = rospy.Publisher("/hand_markers", MarkerArray, queue_size=10)
         self._hand_twist_pub = {side: rospy.Publisher(f"/{side}_hand_twist", TwistStamped, queue_size=10) for side in sides}
         rospy.logdebug('Initiating camera tracker driver')
-        
+        # rospy.on_shutdown(self.stop)
+    
+    def __del__(self):
+        cv2.destroyAllWindows()
+        self.stop()
+
     def stop(self):
 
         if self._data_plot:
-            elapsed_times = self.elapsed_times
-            avg_elapsed_time = sum(elapsed_times) / len(elapsed_times)
-            max_elapsed_time = max(elapsed_times)
-            plt.plot(elapsed_times)
-            plt.xlabel('Frame')
-            plt.ylabel('Elapsed Time (s)')
-            plt.title('Elapsed Time per Frame')
+            fig, ax = plt.subplots(3, 2, figsize=(15, 20))
+            ax[0,0].plot(self._twist['Right']['x'], label='xr')
+            ax[0,0].set_xlabel('Time')
+            ax[0,0].set_ylabel('Twist (m/s)')
+            ax[0,0].legend()
 
-            # Add text at the top right of the graph
-            textstr = f'Avg: {avg_elapsed_time:.3f}s\nMax: {max_elapsed_time:.3f}s'
-            
-            # Set the location of the text box
-            plt.text(0.95, 0.95, textstr, transform=plt.gca().transAxes,
-                    fontsize=10, verticalalignment='top', horizontalalignment='right',
-                    bbox=dict(facecolor='white', alpha=0.5))
+            ax[1,0].plot(self._twist['Right']['y'], label='yr')
+            ax[1,0].set_xlabel('Time')
+            ax[1,0].set_ylabel('Twist (m/s)')
+            ax[1,0].legend()
+
+            ax[2,0].plot(self._twist['Right']['z'], label='zr')
+            ax[2,0].set_xlabel('Time')
+            ax[2,0].set_ylabel('Twist (m/s)')
+            ax[2,0].legend()
+
+            ax[0,1].plot(self._twist['Left']['x'], label='xl')
+            ax[0,1].set_xlabel('Time')
+            ax[0,1].set_ylabel('Twist (m/s)')
+            ax[0,1].legend()
+
+            ax[1,1].plot(self._twist['Left']['y'], label='yl')
+            ax[1,1].set_xlabel('Time')
+            ax[1,1].set_ylabel('Twist (m/s)')
+            ax[1,1].legend()
+
+            ax[2,1].plot(self._twist['Left']['z'], label='zl')
+            ax[2,1].set_xlabel('Time')
+            ax[2,1].set_ylabel('Twist (m/s)')
+            ax[2,1].legend()
 
             plt.show()
+
+
+
+
+            # elapsed_times = self.elapsed_times
+            # avg_elapsed_time = sum(elapsed_times) / len(elapsed_times)
+            # max_elapsed_time = max(elapsed_times)
+            # plt.plot(elapsed_times)
+            # plt.xlabel('Frame')
+            # plt.ylabel('Elapsed Time (s)')
+            # plt.title('Elapsed Time per Frame')
+
+            # right_hand_twist = self.right_hand_twist   
+
+            # plt.figure()
+            # plt.plot(right_hand_twist['x'], label='x')
+            # plt.xlabel('Time')
+            # plt.ylabel('Twist (m/s)')
+            # plt.title('Right Hand Twist')
+
+            # # Add text at the top right of the graph
+            # textstr = f'Avg: {avg_elapsed_time:.3f}s\nMax: {max_elapsed_time:.3f}s'
+            
+            # # Set the location of the text box
+            # plt.text(0.95, 0.95, textstr, transform=plt.gca().transAxes,
+            #         fontsize=10, verticalalignment='top', horizontalalignment='right',
+            #         bbox=dict(facecolor='white', alpha=0.5))
+
+            # plt.show()
     
     def _rgb_callback(self, msg : Image):
         try: 
@@ -99,6 +161,8 @@ class RealsenseTracker():
             
             if self._h is None:
                 self._h, self._w, _ = self._img.shape
+
+            print(self._processing_thread.is_alive())
         except CvBridgeError as e:
             rospy.logerr(e)
             
@@ -110,25 +174,26 @@ class RealsenseTracker():
             rospy.logerr(e)
     
     def _process_results(self):
-        
         while not rospy.is_shutdown():
-
             if self._result is not None:
 
                 current_points = self._get_wrist_point(result = self._result, normalized=False)
-
                 for side in ['Left', 'Right']:
-                    if current_points[side] is None:
-                        continue
-                    elif self._prev_points[side] is None:
-                        self._prev_points[side] = current_points[side]
-                        continue
-                    else:
-                        self._get_hand_twist(current_points[side], self._prev_points[side], side, 1/config['CONTROL_RATE'])
+                    twist = 0
+                    if current_points[side] is not None:
+                        
+                        if self._prev_points[side] is not None:
+                            twist = self._get_hand_twist(point=current_points[side], 
+                                                         prev_point=self._prev_points[side], 
+                                                         side=side, 
+                                                         dt=1/config['CONTROL_RATE'])
+                            if self._data_plot:
+                                self._twist[side]['x'].append(twist.twist.linear.x)
+                                self._twist[side]['y'].append(twist.twist.linear.y) 
+                                self._twist[side]['z'].append(twist.twist.linear.z)
                         self._prev_points[side] = current_points[side]
 
-
-            self._rate.sleep()
+            # self._rate.sleep()
 
 
     def _get_wrist_point(self, result, node=0, normalized=True):
@@ -224,10 +289,13 @@ class RealsenseTracker():
                         markers.markers.append(marker)
            
             self._markers_pub.publish(markers)
-
+            if ges['Left'] == 'Pointing_Up' and ges['Right'] == 'Pointing_Up':
+                rospy.signal_shutdown('Both hands are pointing up')
         else:
             rospy.logwarn('No hand detected')
             return None
+        
+
 
         if self._data_plot:
             elapsed_time = time.time() - start_time
@@ -238,7 +306,7 @@ class RealsenseTracker():
         return points   
 
     def _get_hand_twist(self, point, prev_point, side, dt):
-
+        scale = 0.2
         twist = ROSUtils.create_twiststamped()
         if point is not None and prev_point is not None:
             velocity = np.zeros(6)
@@ -246,9 +314,9 @@ class RealsenseTracker():
 
             # Apply low-pass filter to each velocity component
             filtered_velocity = [
-                self._filters[side]["x"].filter(velocity[0]),
-                self._filters[side]["y"].filter(velocity[1]),
-                self._filters[side]["z"].filter(velocity[2]),
+                self._filters[side]["x"].filter(velocity[0]*scale),
+                self._filters[side]["y"].filter(velocity[1]*scale),
+                self._filters[side]["z"].filter(velocity[2]*scale),
                 0,0,0
             ]
             twist = ROSUtils.create_twiststamped(filtered_velocity)
