@@ -18,18 +18,23 @@ The python module can be installed by standard pip tool
 pip install robotics-toolbox-python
 ```
 
-1. Clone the repository into ROS workspace:
+1. Clone the repository into ROS workspace and install required dependencies for ROS:
 
    ```bash
    git clone https://github.com/your-username/bimanual_teleop_controller.git
    ```
-
 
 2. Install required dependencies for ROS:
     ```bash
     rosdep install --from-paths src --ignore-src -r -y
     ```
 
+3. Install non-ROS package 
+    ```bash
+    pip install rvc3python
+    pip install mediapipe
+
+    ```
 
 ## Contributors
 

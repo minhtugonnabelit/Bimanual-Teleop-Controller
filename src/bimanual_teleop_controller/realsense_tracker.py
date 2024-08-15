@@ -17,7 +17,6 @@ from bimanual_teleop_controller.utility import *
 
 class RealsenseTracker():
 
-    # TODO: Add publisher for hand node velocity tracking
     def __init__(self, data_plot = False) -> None:
         
         self._data_plot = data_plot
@@ -164,14 +163,14 @@ class RealsenseTracker():
 
             print(self._processing_thread.is_alive())
         except CvBridgeError as e:
-            rospy.logerr(e)
+            rospy.logerr(f"😡 said: {e}")
             
     def _depth_callback(self, msg : Image):
         try:
             depth_img = self._bridge.imgmsg_to_cv2(img_msg=msg, desired_encoding='passthrough')
             self._depth_img = depth_img
         except CvBridgeError as e:
-            rospy.logerr(e)
+            rospy.logerr(f"😡 said: {e}")
     
     def _process_results(self):
         while not rospy.is_shutdown():
@@ -181,19 +180,18 @@ class RealsenseTracker():
                 for side in ['Left', 'Right']:
                     twist = 0
                     if current_points[side] is not None:
-                        
                         if self._prev_points[side] is not None:
                             twist = self._get_hand_twist(point=current_points[side], 
                                                          prev_point=self._prev_points[side], 
                                                          side=side, 
-                                                         dt=1/config['CONTROL_RATE'])
+                                                         Δt=1/config['CONTROL_RATE'])
                             if self._data_plot:
                                 self._twist[side]['x'].append(twist.twist.linear.x)
                                 self._twist[side]['y'].append(twist.twist.linear.y) 
                                 self._twist[side]['z'].append(twist.twist.linear.z)
                         self._prev_points[side] = current_points[side]
 
-            # self._rate.sleep()
+            self._rate.sleep()
 
 
     def _get_wrist_point(self, result, node=0, normalized=True):
@@ -289,14 +287,12 @@ class RealsenseTracker():
                         markers.markers.append(marker)
            
             self._markers_pub.publish(markers)
-            if ges['Left'] == 'Pointing_Up' and ges['Right'] == 'Pointing_Up':
-                rospy.signal_shutdown('Both hands are pointing up')
+            # if ges['Left'] == 'Pointing_Up' and ges['Right'] == 'Pointing_Up':
+            #     rospy.signal_shutdown('Both hands are pointing up')
         else:
             rospy.logwarn('No hand detected')
             return None
         
-
-
         if self._data_plot:
             elapsed_time = time.time() - start_time
             self.elapsed_times.append(elapsed_time)
@@ -305,12 +301,12 @@ class RealsenseTracker():
             
         return points   
 
-    def _get_hand_twist(self, point, prev_point, side, dt):
+    def _get_hand_twist(self, point, prev_point, side, Δt):
         scale = 0.2
         twist = ROSUtils.create_twiststamped()
         if point is not None and prev_point is not None:
             velocity = np.zeros(6)
-            velocity[:3] = (np.asarray(point[:3]) - np.asarray(prev_point[:3])) / dt
+            velocity[:3] = (np.asarray(point[:3]) - np.asarray(prev_point[:3])) / Δt
 
             # Apply low-pass filter to each velocity component
             filtered_velocity = [

@@ -171,7 +171,7 @@ class CalcFuncs:
         gain_d: Union[float, ArrayLike] = 0.0,
         threshold=0.1, 
         method='angle-axis',
-        dt=0.001
+        Δt=0.001
     ):
         r"""
         Position-based servoing.
@@ -183,7 +183,7 @@ class CalcFuncs:
         wTep : np.ndarray
             The desired end effector pose of the robot.
         prev_error : np.ndarray
-            The previous error of the end effector pose in time interval dt.
+            The previous error of the end effector pose in time interval Δt.
         gain_p : Union[float, ArrayLike], optional
             The proportional gain of the robot, by default 1.0.
         gain_d : Union[float, ArrayLike], optional
@@ -192,7 +192,7 @@ class CalcFuncs:
             The threshold of the robot, by default 0.1.
         method : str, optional
             The method to calculate the error, by default 'angle-axis'.
-        dt : float, optional
+        Δt : float, optional
             The time step of the robot, by default 0.001.
 
         Returns
@@ -221,24 +221,24 @@ class CalcFuncs:
         if method == "rpy":
             # Pose difference
             eTep = np.linalg.inv(wTe) @ wTep
-            e = np.empty(6)
+            ε = np.empty(6)
 
             # Translational error
-            e[:3] = eTep[:3, -1]
+            ε[:3] = eTep[:3, -1]
 
             # Angular error
-            e[3:] = smb.tr2rpy(eTep, unit="rad", order="zyx", check=False)
+            ε[3:] = smb.tr2rpy(eTep, unit="rad", order="zyx", check=False)
         else:
-            e = CalcFuncs.angle_axis_python(wTe, wTep)
+            ε = CalcFuncs.angle_axis_python(wTe, wTep)
 
         # Calculate the derivative of the error
-        d_error = (e - prev_error) / dt
+        Δε = (ε - prev_error) / Δt
 
-        v = kp @ e + kd @ d_error
+        v = kp @ ε + kd @ Δε
 
-        arrived = True if np.sum(np.abs(e)) < threshold else False
+        arrived = True if np.sum(np.abs(ε)) < threshold else False
 
-        return v, arrived, e
+        return v, arrived, ε
     
     @staticmethod
     def weight(x, k):
