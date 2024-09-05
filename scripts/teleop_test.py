@@ -37,11 +37,11 @@ class BMCP:
             }
             self._hand_markers_sub = rospy.Subscriber(
                 '/hand_markers', MarkerArray, self._hand_markers_callback)
-            
+
             self._left_twist = np.zeros(6)
             self._left_twist_sub = rospy.Subscriber(
                 '/Left_hand_twist', TwistStamped, self._left_twist_callback)
-            
+
             self._right_twist = np.zeros(6)
             self._right_twist_sub = rospy.Subscriber(
                 '/Right_hand_twist', TwistStamped, self._right_twist_callback)
@@ -62,8 +62,10 @@ class BMCP:
         rospy.sleep(1)
 
         # State variables
-        self._constraint_is_set = False
         self._state = 'individual'
+        self._hold_duration = 2.0  # Hold for 2 seconds
+        self._hold_start_time = None
+        self._constraint_is_set = False
 
         # Control signal variables
         self._qdot_right = np.zeros(7)
@@ -78,6 +80,8 @@ class BMCP:
         self._data_recording_thread = threading.Thread(
             target=self.data_recording_handler)
 
+    # State control functions
+
     def switch_to_individual_control(self):
         self._state = 'individual'
 
@@ -86,6 +90,44 @@ class BMCP:
 
     def stop(self):
         self._state = 'Done'
+
+    def handle_mode_change(self):
+        if self._hold_start_time is None:
+            self._hold_start_time = time.time()
+
+        elif time.time() - self._hold_start_time > self._hold_duration:
+            if not self._constraint_is_set:
+                self._constraint_is_set, _, constraint_distance = self.controller.set_kinematics_constraints()
+                rospy.loginfo(
+                    'Constraint is set, switching controllers, started velocity controller thread')
+
+            else:
+                self._constraint_is_set = False
+                rospy.loginfo(
+                    'Constraint is unset, switching back to individual control')
+
+    def reset_hold_timer(self):
+        self._hold_start_time = None
+
+    def stop_teleop(self):
+        self.stop()
+        rospy.loginfo('Done teleoperation.')
+        rospy.signal_shutdown('Done')
+
+        self._control_signal_thread.join()
+        rospy.loginfo('Control signal thread joined.')
+        if not self._motion_tracker:
+            self._base_controller_thread.join()
+            rospy.loginfo('Base controller thread joined.')
+
+        if self._data_plot:
+            self._data_recording_thread.join()
+            rospy.loginfo('Data recording thread joined.')
+
+        os.system(
+            'rosnode kill /hand_tracker') if self._motion_tracker else os.system('rosnode kill /joy')
+
+    # Callback functions
 
     def _hand_markers_callback(self, msg: MarkerArray):
         for marker in msg.markers:
@@ -100,17 +142,16 @@ class BMCP:
         self._right_twist[:3] = np.array([msg.twist.linear.x,
                                           msg.twist.linear.y,
                                           msg.twist.linear.z])
-        
-    def get_twist_from_hand(self, side):
+
+    def _get_twist_from_hand(self, side):
         return self._right_twist if side == 'Right' else self._left_twist
 
     # Initial teleoperation function with XBOX joystick
-    def teleop_test(self):
+    def run(self):
         r"""
         Initial teleoperation function with XBOX joystick
         """
         rospy.loginfo('Start teleop using joystick')
-        # constraint_is_set = False
 
         if not self._motion_tracker:
             self._dead_switch_index = self.joystick.dead_switch_index
@@ -121,7 +162,7 @@ class BMCP:
             self._gripper_close_index = self.joystick.gripper_close_index
             self._trigger_constraint_index = self.joystick.trigger_constraint_index
 
-        self.switch_to_central_control()
+        # self.switch_to_central_control()
         self.controller.start_jg_vel_controller()
         self._control_signal_thread.start()
         self._base_controller_thread.start() if not self._motion_tracker else None
@@ -129,21 +170,12 @@ class BMCP:
         rospy.sleep(1)
 
         while not rospy.is_shutdown():
-
-            # start_time = time.perf_counter()
-
             qdot = np.zeros(14)
-            qdot = self.process_hand_gesture_commands(
-                qdot) if self._motion_tracker else self.teleop_joystick(qdot)
+            qdot = self.teleop_gesture(qdot) if self._motion_tracker \
+                else self.teleop_joystick(qdot)
 
             self._qdot_right = qdot[7:]
             self._qdot_left = qdot[:7]
-
-            # exec_time = time.perf_counter() - start_time
-            # if exec_time > 1/BMCP._CONTROL_RATE:
-            #     rospy.logwarn(
-            #         f'Calculation time exceeds control rate: {exec_time:.4f}')
-            # rospy.logdebug(f'Calculation time: {exec_time:.4f}')
 
     def teleop_joystick(self, qdot):
 
@@ -152,26 +184,18 @@ class BMCP:
         if joy_msg[1][self._system_halt_index]:
             self.stop_teleop()
 
-        if (joy_msg[1][self._trigger_constraint_index[0]] * joy_msg[1][self._trigger_constraint_index[1]]) and not self._constraint_is_set:
-            self._constraint_is_set, _, constraint_distance = self.controller.set_kinematics_constraints()
-            if self._data_plot:
-                self.controller.store_constraint_distance(constraint_distance)
-                self._data_recording_thread.start()
-            rospy.loginfo(
-                'Constraint is set, switching controllers, started velocity controller thread')
+        self.handle_mode_change() if (joy_msg[1][self._trigger_constraint_index[0]] * joy_msg[1][self._trigger_constraint_index[1]])\
+            else self.reset_hold_timer()
 
-        twist, _ = self.joystick.joy_to_twist(BMCP._TWIST_GAIN)
+        qdot = np.zeros(14)
         if joy_msg[0][self._dead_switch_index] != 1:
-            if self._constraint_is_set:
-                qdot = self.handle_constrained_twist(qdot, twist)
-            else:
-                qdot = self.handle_individual_arm_control(qdot, twist, joy_msg)
-        else:
-            return np.zeros(14)
+            twist, _ = self.joystick.joy_to_twist(BMCP._TWIST_GAIN)
+            qdot = self.handle_constrained_twist(qdot, twist) if self._constraint_is_set \
+                else self.handle_indiv_arm_joy(qdot, twist, joy_msg)
 
         return qdot
 
-    def handle_individual_arm_control(self, qdot, twist, joy_msg):
+    def handle_indiv_arm_joy(self, qdot, twist, joy_msg):
         if joy_msg[1][self._right_arm_index]:  # left bumper
             qdot[7:] = self.controller.process_arm_movement(
                 side='r', twist=twist, manip_thresh=BMCP._MANIP_THRESH, damper_steepness=BMCP._DAMPER_STEEPNESS)
@@ -181,36 +205,38 @@ class BMCP:
 
         return qdot
 
-    def teleop_hand_gestures(self):
+    def teleop_gesture(self, qdot):
+
         if self._hand_gesture['Left'] == 'Pointing_Up' and self._hand_gesture['Right'] == 'Pointing_Up':
             self.stop_teleop()
 
-        if not self._constraint_is_set:
-            if self._hand_gesture['Left'] == 'Thumb_Up' and self._hand_gesture['Right'] == 'Thumb_Up':
-                self._constraint_is_set, _, constraint_distance = self.controller.set_kinematics_constraints()
-                rospy.loginfo('Switching to coordination mode')
-                if self._data_plot:
-                    self.controller.store_constraint_distance(
-                        constraint_distance)
-                    self._data_recording_thread.start()
+        self.handle_mode_change() if (self._hand_gesture['Left'] == 'Thumb_Up' and self._hand_gesture['Right'] == 'Thumb_Up')\
+            else self.reset_hold_timer()
 
-    def process_hand_gesture_commands(self, qdot):
-        self.teleop_hand_gestures()
-        twist_left = self.get_twist_from_hand('Left')
-        twist_right = self.get_twist_from_hand('Right')
-
-        if self._constraint_is_set:
-            object_twist = twist_right if self._dominant_hand == 'Right' else twist_left
-            if self._hand_gesture[self._dominant_hand] == 'Closed_Fist':
+        qdot = np.zeros(14)
+        if self._hand_gesture[self._dominant_hand] == 'Closed_Fist':
+            twist_left = self._get_twist_from_hand('Left')
+            twist_right = self._get_twist_from_hand('Right')
+            if self._constraint_is_set:
+                object_twist = twist_right if self._dominant_hand == 'Right' else twist_left
                 qdot = self.handle_constrained_twist(qdot, object_twist)
             else:
-                return np.zeros(14)
-
-        else:
-            qdot = self.handle_indiv_arm_control_ges(
-                qdot, twist_left, twist_right)
+                qdot = self.handle_indiv_arm_ges(
+                    qdot, twist_left, twist_right)
 
         return qdot
+
+    def handle_indiv_arm_ges(self, qdot, twist_left, twist_right):
+        if self._hand_gesture['Left'] == 'Closed_Fist':
+            qdot[:7] = self.controller.process_arm_movement(
+                side='l', twist=twist_left, manip_thresh=BMCP._MANIP_THRESH, damper_steepness=BMCP._DAMPER_STEEPNESS)
+        if self._hand_gesture['Right'] == 'Closed_Fist':
+            qdot[7:] = self.controller.process_arm_movement(
+                side='r', twist=twist_right, manip_thresh=BMCP._MANIP_THRESH, damper_steepness=BMCP._DAMPER_STEEPNESS)
+
+        return qdot
+
+    # Constraint handling functions
 
     def handle_constrained_twist(self, qdot, object_twist):
 
@@ -249,16 +275,7 @@ class BMCP:
 
         return qdot
 
-    def handle_indiv_arm_control_ges(self, qdot, twist_left, twist_right):
-        if self._hand_gesture['Left'] == 'Closed_Fist':
-            qdot[:7] = self.controller.process_arm_movement(
-                side='l', twist=twist_left, manip_thresh=BMCP._MANIP_THRESH, damper_steepness=BMCP._DAMPER_STEEPNESS)
-        if self._hand_gesture['Right'] == 'Closed_Fist':
-            qdot[7:] = self.controller.process_arm_movement(
-                side='r', twist=twist_right, manip_thresh=BMCP._MANIP_THRESH, damper_steepness=BMCP._DAMPER_STEEPNESS)
-
-        return qdot
-
+    # Thread handlers functions
 
     def handle_gripper(self, arm, joy_msg):
 
@@ -333,120 +350,107 @@ class BMCP:
                 self.controller.store_manipulability()
                 self.controller.store_drift()
 
+    # Backup function for processing joystick commands
 
-    def stop_teleop(self):
-        self.stop()
-        rospy.loginfo('Done teleoperation.')
-        rospy.signal_shutdown('Done')
+    def process_joy_cmd(self):
+        '''
+        joy_msg = self.joystick.get_joy_msg()
 
-        self._control_signal_thread.join()
-        rospy.loginfo('Control signal thread joined.')
-        if not self._motion_tracker:
+        if joy_msg[1][self._system_halt_index]:
+
+            self.stop()
+            rospy.loginfo('Done teleoperation.')
+            rospy.signal_shutdown('Done')
+
+            self._control_signal_thread.join()
+            rospy.loginfo('Control signal thread joined.')
             self._base_controller_thread.join()
             rospy.loginfo('Base controller thread joined.')
 
-        if self._data_plot:
-            self._data_recording_thread.join()
-            rospy.loginfo('Data recording thread joined.')
+            if self._data_plot:
+                self._data_recording_thread.join()
+                rospy.loginfo('Data recording thread joined.')
 
-        os.system(
-            'rosnode kill /hand_tracker') if self._motion_tracker else os.system('rosnode kill /joy')
+            os.system(
+                'rosnode kill /hand_tracker') if self._motion_tracker else os.system('rosnode kill /joy')
 
-    def process_joy_cmd(self):
-        # joy_msg = self.joystick.get_joy_msg()
+        # Set the kinematic constraints for BMCP and start joint group velocity controller
+        # DO NOT combine this with the below if statement for not setting the constraint
+        if (joy_msg[1][self._trigger_constraint_index[0]] * joy_msg[1][self._trigger_constraint_index[1]]) and not constraint_is_set:
 
-        # if joy_msg[1][self._system_halt_index]:
+            constraint_is_set, _, constraint_distance = self.controller.set_kinematics_constraints()
+            if self._data_plot:
+                self.controller.store_constraint_distance(
+                    constraint_distance)
+                self._data_recording_thread.start()
+            rospy.loginfo(
+                'Constraint is set, switching controllers, started velocity controller thread')
 
-        #     self.stop()
-        #     rospy.loginfo('Done teleoperation.')
-        #     rospy.signal_shutdown('Done')
+        # Once constraint is set, start the teleoperation using
+        twist, _ = self.joystick.motion_to_twist(
+            BMCP._TWIST_GAIN) if self._motion_tracker else self.joystick.joy_to_twist(BMCP._TWIST_GAIN)
 
-        #     self._control_signal_thread.join()
-        #     rospy.loginfo('Control signal thread joined.')
-        #     self._base_controller_thread.join()
-        #     rospy.loginfo('Base controller thread joined.')
+        if constraint_is_set:
 
-        #     if self._data_plot:
-        #         self._data_recording_thread.join()
-        #         rospy.loginfo('Data recording thread joined.')
+            # Exrtact the twist from the joystick message
+            twist_left = self.controller.get_twist_in_tool_frame(
+                side='l', twist=twist)
+            twist_right = self.controller.get_twist_in_tool_frame(
+                side='r', twist=twist)
 
-        #     os.system(
-        #         'rosnode kill /hand_tracker') if self._motion_tracker else os.system('rosnode kill /joy')
+            # RT trigger to allow control signal to be sent
+            if joy_msg[0][self._dead_switch_index] != 1:
 
-        # # Set the kinematic constraints for BMCP and start joint group velocity controller
-        # # DO NOT combine this with the below if statement for not setting the constraint
-        # if (joy_msg[1][self._trigger_constraint_index[0]] * joy_msg[1][self._trigger_constraint_index[1]]) and not constraint_is_set:
+                # Extract the Jacobians in the middle frame using the virtual robot with joint states data from the real robot
+                jacob_right = self.controller.get_jacobian(side='r')
+                jacob_left = self.controller.get_jacobian(side='l')
+                jacob_constraint = np.c_[jacob_left, -jacob_right]
 
-        #     constraint_is_set, _, constraint_distance = self.controller.set_kinematics_constraints()
-        #     if self._data_plot:
-        #         self.controller.store_constraint_distance(
-        #             constraint_distance)
-        #         self._data_recording_thread.start()
-        #     rospy.loginfo(
-        #         'Constraint is set, switching controllers, started velocity controller thread')
+                # Calculate the joint velocities using RMRC
+                qdot_right = CalcFuncs.rmrc(
+                    jacob_right, twist_right, w_thresh=BMCP._MANIP_THRESH)
+                qdot_left = CalcFuncs.rmrc(
+                    jacob_left, twist_left,  w_thresh=BMCP._MANIP_THRESH)
+                qdot_combined = np.r_[qdot_left, qdot_right]
 
-        # # Once constraint is set, start the teleoperation using
-        # twist, _ = self.joystick.motion_to_twist(
-        #     BMCP._TWIST_GAIN) if self._motion_tracker else self.joystick.joy_to_twist(BMCP._TWIST_GAIN)
+                # Perform nullspace projection for qdot_combined on constraint Jacobian to ensure the twist synchronisatio
+                taskspace_drift_compensation = self.controller.task_drift_compensation(gain_p=BMCP._DRIFT_GAIN['p'],
+                                                                                       gain_d=BMCP._DRIFT_GAIN['d'],
+                                                                                       on_taskspace=True) * 2
 
-        # if constraint_is_set:
+                # Combine the primary and secondary tasks velocities
+                primary_tasks_vel = np.linalg.pinv(
+                    jacob_constraint) @ taskspace_drift_compensation
+                secondary_tasks_vel = CalcFuncs.nullspace_projector(
+                    jacob_constraint) @ qdot_combined
+                qdot = primary_tasks_vel + secondary_tasks_vel
 
-        #     # Exrtact the twist from the joystick message
-        #     twist_left = self.controller.get_twist_in_tool_frame(
-        #         side='l', twist=twist)
-        #     twist_right = self.controller.get_twist_in_tool_frame(
-        #         side='r', twist=twist)
+                # Add a joint limits damper to the joint velocities
+                qdot += self.controller.joint_limit_damper(
+                    qdot, steepness=BMCP._DAMPER_STEEPNESS)
 
-        #     # RT trigger to allow control signal to be sent
-        #     if joy_msg[0][self._dead_switch_index] != 1:
-
-        #         # Extract the Jacobians in the middle frame using the virtual robot with joint states data from the real robot
-        #         jacob_right = self.controller.get_jacobian(side='r')
-        #         jacob_left = self.controller.get_jacobian(side='l')
-        #         jacob_constraint = np.c_[jacob_left, -jacob_right]
-
-        #         # Calculate the joint velocities using RMRC
-        #         qdot_right = CalcFuncs.rmrc(
-        #             jacob_right, twist_right, w_thresh=BMCP._MANIP_THRESH)
-        #         qdot_left = CalcFuncs.rmrc(
-        #             jacob_left, twist_left,  w_thresh=BMCP._MANIP_THRESH)
-        #         qdot_combined = np.r_[qdot_left, qdot_right]
-
-        #         # Perform nullspace projection for qdot_combined on constraint Jacobian to ensure the twist synchronisatio
-        #         taskspace_drift_compensation = self.controller.task_drift_compensation(gain_p=BMCP._DRIFT_GAIN['p'],
-        #                                                                                gain_d=BMCP._DRIFT_GAIN['d'],
-        #                                                                                on_taskspace=True) * 2
-
-        #         # Combine the primary and secondary tasks velocities
-        #         primary_tasks_vel = np.linalg.pinv(
-        #             jacob_constraint) @ taskspace_drift_compensation
-        #         secondary_tasks_vel = CalcFuncs.nullspace_projector(
-        #             jacob_constraint) @ qdot_combined
-        #         qdot = primary_tasks_vel + secondary_tasks_vel
-
-        #         # Add a joint limits damper to the joint velocities
-        #         qdot += self.controller.joint_limit_damper(
-        #             qdot, steepness=BMCP._DAMPER_STEEPNESS)
-
-        # else:
-        #     if joy_msg[1][self._right_arm_index]:  # left bumper
-        #         if joy_msg[0][self._dead_switch_index] != 1:
-        #             qdot[7:] = self.controller.process_arm_movement(side='r',
-        #                                                             twist=twist,
-        #                                                             manip_thresh=BMCP._MANIP_THRESH,
-        #                                                             damper_steepness=BMCP._DAMPER_STEEPNESS)
-        #     if joy_msg[1][self._left_arm_index]:  # right bumper
-        #         if joy_msg[0][self._dead_switch_index] != 1:
-        #             qdot[:7] = self.controller.process_arm_movement(side='l',
-        #                                                             twist=twist,
-        #                                                             manip_thresh=BMCP._MANIP_THRESH,
-        #                                                             damper_steepness=BMCP._DAMPER_STEEPNESS)
+        else:
+            if joy_msg[1][self._right_arm_index]:  # left bumper
+                if joy_msg[0][self._dead_switch_index] != 1:
+                    qdot[7:] = self.controller.process_arm_movement(side='r',
+                                                                    twist=twist,
+                                                                    manip_thresh=BMCP._MANIP_THRESH,
+                                                                    damper_steepness=BMCP._DAMPER_STEEPNESS)
+            if joy_msg[1][self._left_arm_index]:  # right bumper
+                if joy_msg[0][self._dead_switch_index] != 1:
+                    qdot[:7] = self.controller.process_arm_movement(side='l',
+                                                                    twist=twist,
+                                                                    manip_thresh=BMCP._MANIP_THRESH,
+                                                                    damper_steepness=BMCP._DAMPER_STEEPNESS)
+        '''
+        
         pass
+
 
 if __name__ == "__main__":
     try:
         rospy.init_node('bimanual_controller', log_level=2, anonymous=True)
-        data_plot = rospy.get_param('~data_plot', True)
+        data_plot = rospy.get_param('~data_plot', False)
         motion_tracker = rospy.get_param('~motion_tracker', False)
         dominant_hand = rospy.get_param('~dominant_hand', 'Right')
 
@@ -454,7 +458,7 @@ if __name__ == "__main__":
                  data_plot=data_plot,
                  motion_tracker=motion_tracker,
                  dominant_hand=dominant_hand)
-        b.teleop_test()
+        b.run()
 
     except rospy.ROSInterruptException:
         pass
