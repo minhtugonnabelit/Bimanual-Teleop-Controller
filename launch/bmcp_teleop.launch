@@ -8,7 +8,9 @@
    <!-- Conditional joystick node -->
    <node name="joy" pkg="joy" type="joy_node" required="true" if="$(eval not arg('motion_tracker'))">
       <param name="~dev" value="/dev/input/js0" />
+      <param name="~dev_ff" value="/dev/input/event19" />
       <param name="~deadzone" value="0.05" />
+      <param name="~default_trig_val" value="true" />
    </node>
 <!-- 
    <node pkg="bimanual_teleop_controller" type="hand_lookup.py" name="hand_tracker" output="screen" if="$(eval arg('motion_tracker'))">

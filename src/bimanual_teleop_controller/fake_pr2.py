@@ -99,6 +99,12 @@ class FakePR2:
             self._robot.q, end=self._arms_frame['r']['end'])) @ virtual_pose
 
         return True
+    
+    def reset_constraints(self):
+        self._tool_offset = {
+            'l': np.eye(4),
+            'r': np.eye(4)
+        }
 
     def set_states(self, joint_states, real_robot=True):
             r"""
@@ -339,7 +345,7 @@ class FakePR2:
                                                     gain_d=gain_d,
                                                     threshold=0.001,
                                                     method='angle-axis',
-                                                    dt=1/self._control_rate)
+                                                    Δt=1/self._control_rate)
 
         if on_taskspace:
             return v

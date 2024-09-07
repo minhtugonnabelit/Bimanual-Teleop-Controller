@@ -117,6 +117,10 @@ class PR2Controller:
 
         self._virtual_robot.set_constraints(virtual_pose)
         return True, virtual_pose, constraint_distance
+    
+    def reset_constraints(self):
+        self._virtual_robot.reset_constraints()
+        return False
 
     def set_jacobian_constraints(self, jacobian_constraints : np.ndarray):
         self._jacobian_constraints = jacobian_constraints
@@ -181,6 +185,7 @@ class PR2Controller:
         joint_limits_damper, max_weights, joint_on_max_limit = self._virtual_robot.joint_limits_damper(
             qdot, self._dt, steepness)
         
+        max_weights_scaled = 0
         if max_weights > 0.8:
 
             side = 'left'
@@ -188,11 +193,11 @@ class PR2Controller:
                 joint_on_max_limit -= 7
                 side = 'right'
 
-            rumble_freq = (max_weights - 0.8)*3
+            max_weights_scaled = (max_weights - 0.8)*5
             rospy.logwarn(
                 f"\nJoint limit avoidance mechanism is applied with max weight: {max_weights:.2f} at joint {self._JOINT_NAMES[side][joint_on_max_limit[0]]}")
 
-        return joint_limits_damper
+        return joint_limits_damper, max_weights_scaled
 
     def task_drift_compensation(self, gain_p=5, gain_d=0.5, on_taskspace=True):
         return self._virtual_robot.task_drift_compensation(gain_p, gain_d, on_taskspace)

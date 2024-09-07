@@ -3,7 +3,7 @@ import pygame
 import sys
 
 import rospy, tf
-from sensor_msgs.msg import Joy
+from sensor_msgs.msg import Joy, JoyFeedback, JoyFeedbackArray
 from geometry_msgs.msg import TwistStamped
 from bimanual_teleop_controller.math_utils import LowPassFilter
 
@@ -35,8 +35,9 @@ class JoystickController():
         self._pitch_ax = 4
 
         controller_name = self._joy_pygame.get_name()
+        rospy.logdebug(f'Controller name: {controller_name}')
         if controller_name == "Sony PLAYSTATION(R)3 Controller":
-            # pass
+
             self._dead_switch_index = 5
             self._system_halt_index = -7
             self._right_arm_index = 4
@@ -53,6 +54,24 @@ class JoystickController():
             self._y_ax = 0
             self._roll_ax = 3
             self._pitch_ax = 4
+            
+        # elif controller_name == "Sony Interactive Entertainment Wireless Controller":
+        #     self._dead_switch_index = 5
+        #     self._system_halt_index = -3
+        #     self._right_arm_index = 4
+        #     self._left_arm_index = 5
+        #     self._gripper_open_index = -4
+        #     self._gripper_close_index = -3
+        #     self._trigger_constraint_index = [8, 9]
+            
+        #     self._up = 2
+        #     self._down = 0
+        #     self._yaw_left = 3
+        #     self._yaw_right = 1
+        #     self._x_ax = 1
+        #     self._y_ax = 0
+        #     self._roll_ax = 3
+        #     self._pitch_ax = 4
 
         self._motion_tracker = motion_tracker
         if self._motion_tracker:
@@ -72,6 +91,7 @@ class JoystickController():
 
         self._joy_msg = rospy.wait_for_message(joy_topic, Joy)
         self._subscriber = rospy.Subscriber(joy_topic, Joy, self._joy_callback)
+        self._feedback_pub = rospy.Publisher("/joy/set_feedback", JoyFeedbackArray, queue_size=10)
 
         # Initialize low-pass filters for each axis
         alpha = 0.3  # Smoothing factor for the low-pass filter
@@ -193,6 +213,25 @@ class JoystickController():
             twist[1][2] * ang_gain)
 
         return twiststamped_msg
+
+    def controller_LED_on(self, LED_id):
+        joy_fbs = JoyFeedbackArray()
+        joy_fb = JoyFeedback()
+        joy_fb.type = joy_fb.TYPE_LED     # LED type
+        joy_fb.id = LED_id
+        joy_fb.intensity = 1
+        joy_fbs.array.append(joy_fb)
+        self._feedback_pub.publish(joy_fbs)
+
+    def rumble(self, strength):
+        joy_fbs = JoyFeedbackArray()
+        joy_fb = JoyFeedback()
+        joy_fb.type = joy_fb.TYPE_RUMBLE     
+        joy_fb.intensity = strength
+        joy_fbs.array.append(joy_fb)
+        self._feedback_pub.publish(joy_fbs)
+
+
 
     def start_rumble(self, low_freq=0.5, high_freq=0.5, duration=1):
         if not self._motion_tracker:

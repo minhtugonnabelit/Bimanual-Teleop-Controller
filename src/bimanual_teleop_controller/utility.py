@@ -121,11 +121,11 @@ class ROSUtils:
     def create_marker(namespace, text, pos, id=0):
         marker = Marker()
 
-        marker.header.frame_id = "camera_color_optical_frame"
+        marker.header.frame_id = "rs_camera_color_optical_frame"
         marker.header.stamp = rospy.Time.now()
 
         # set shape, Arrow: 0; Cube: 1 ; Sphere: 2 ; Cylinder: 3
-        marker.type = 9 #if text == 'Closed_Fist' else 1
+        marker.type = 2 if text == 'Closed_Fist' else 1
         marker.id = id
         marker.action = Marker.ADD
         marker.ns = namespace
@@ -158,7 +158,7 @@ class ROSUtils:
     @staticmethod
     def create_twiststamped(twist=np.zeros(6)):
         ts = TwistStamped()
-        ts.header.frame_id = "camera_color_optical_frame"
+        ts.header.frame_id = "rs_camera_color_optical_frame"
         ts.header.stamp = rospy.Time.now()
         ts.twist.linear.x = twist[0]
         ts.twist.linear.y = twist[1]

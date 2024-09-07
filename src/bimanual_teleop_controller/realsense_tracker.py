@@ -5,11 +5,11 @@ import matplotlib.pyplot as plt
 import threading
 import cv2
 
-import rospy
+import rospy, tf2_ros
 from cv_bridge import CvBridge, CvBridgeError
 from sensor_msgs.msg import Image, CameraInfo
-from geometry_msgs.msg import TwistStamped
-from visualization_msgs.msg import Marker, MarkerArray
+from geometry_msgs.msg import TwistStamped,TransformStamped
+from visualization_msgs.msg import Marker, MarkerArray  
 
 from bimanual_teleop_controller.hand_tracker import HandTracker
 from bimanual_teleop_controller.math_utils import LowPassFilter
@@ -36,11 +36,11 @@ class RealsenseTracker():
                 }
             }
             
-        self._rate   = rospy.Rate(config['CONTROL_RATE'])
+        self._rate   = rospy.Rate(15)
         self._handtracker = HandTracker()
         self._processing_thread = threading.Thread(target=self._process_results)
         
-        self._cam_inf = rospy.wait_for_message('/camera/color/camera_info', CameraInfo)
+        self._cam_inf = rospy.wait_for_message('/rs_camera/color/camera_info', CameraInfo)
         self._FX = self._cam_inf.K[0] 
         self._FY = self._cam_inf.K[4]
         self._CX = self._cam_inf.K[2]
@@ -53,8 +53,8 @@ class RealsenseTracker():
         self._result = None
         self._bridge = CvBridge()
         
-        self._rgb_sub = rospy.Subscriber("/camera/color/image_raw", Image, self._rgb_callback)
-        self._depth_sub = rospy.Subscriber("/camera/aligned_depth_to_color/image_raw", Image, self._depth_callback)
+        self._rgb_sub = rospy.Subscriber("/rs_camera/color/image_raw", Image, self._rgb_callback)
+        self._depth_sub = rospy.Subscriber("/rs_camera/aligned_depth_to_color/image_raw", Image, self._depth_callback)
         
         self._jump_thresh = 0.05
         self._depth_latency = 1.0
@@ -78,18 +78,19 @@ class RealsenseTracker():
                 "z": LowPassFilter(alpha=0.5)
             }
         }
-              
+        self._buffer = tf2_ros.Buffer()
+        self._listener = tf2_ros.TransformListener(self._buffer)
         self._markers_pub = rospy.Publisher("/hand_markers", MarkerArray, queue_size=10)
         self._hand_twist_pub = {side: rospy.Publisher(f"/{side}_hand_twist", TwistStamped, queue_size=10) for side in sides}
         rospy.logdebug('Initiating camera tracker driver')
-        # rospy.on_shutdown(self.stop)
+        rospy.on_shutdown(self.stop)
     
     def __del__(self):
         cv2.destroyAllWindows()
-        self.stop()
+        # self.stop()
 
     def stop(self):
-
+        
         if self._data_plot:
             fig, ax = plt.subplots(3, 2, figsize=(15, 20))
             ax[0,0].plot(self._twist['Right']['x'], label='xr')
@@ -161,7 +162,6 @@ class RealsenseTracker():
             if self._h is None:
                 self._h, self._w, _ = self._img.shape
 
-            print(self._processing_thread.is_alive())
         except CvBridgeError as e:
             rospy.logerr(f"😡 said: {e}")
             
@@ -173,24 +173,27 @@ class RealsenseTracker():
             rospy.logerr(f"😡 said: {e}")
     
     def _process_results(self):
+        normalized = True
         while not rospy.is_shutdown():
             if self._result is not None:
 
-                current_points = self._get_wrist_point(result = self._result, normalized=False)
-                for side in ['Left', 'Right']:
-                    twist = 0
-                    if current_points[side] is not None:
-                        if self._prev_points[side] is not None:
-                            twist = self._get_hand_twist(point=current_points[side], 
-                                                         prev_point=self._prev_points[side], 
-                                                         side=side, 
-                                                         Δt=1/config['CONTROL_RATE'])
-                            if self._data_plot:
-                                self._twist[side]['x'].append(twist.twist.linear.x)
-                                self._twist[side]['y'].append(twist.twist.linear.y) 
-                                self._twist[side]['z'].append(twist.twist.linear.z)
-                        self._prev_points[side] = current_points[side]
+                current_points, _ = self._get_wrist_point(result = self._result, normalized=normalized)
+                if not normalized:
 
+                    for side in ['Left', 'Right']:
+                        twist = 0
+                        if current_points[side] is not None:
+                            if self._prev_points[side] is not None:
+                                twist = self._get_hand_twist(point=current_points[side], 
+                                                            prev_point=self._prev_points[side], 
+                                                            side=side, 
+                                                            Δt=1/15)
+                                if self._data_plot:
+                                    self._twist[side]['x'].append(twist.twist.linear.x)
+                                    self._twist[side]['y'].append(twist.twist.linear.y) 
+                                    self._twist[side]['z'].append(twist.twist.linear.z)
+                            self._prev_points[side] = current_points[side]
+        
             self._rate.sleep()
 
 
@@ -202,8 +205,8 @@ class RealsenseTracker():
         points = {side: [0,0,0] for side in sides}
         markers = MarkerArray()
 
-        if self._data_plot: 
-            start_time = time.time()
+        # if self._data_plot: 
+        #     start_time = time.time()
         
         if result:
             gestures = result.gestures
@@ -219,7 +222,9 @@ class RealsenseTracker():
                      
                 for idx in range(len(hand_landmarks)):
                     if handesness[idx][node].category_name == side:
-                                                
+                        
+                        ges[side] = gestures[idx][0].category_name
+                      
                         # Average the x and y coordinates of the selected nodes for middle of the palm
                         for n in nodes_to_average:
                             u_sum += hand_landmarks[idx][n].x
@@ -235,7 +240,7 @@ class RealsenseTracker():
                                 y = v_avg - 0.5
                                 z = 0
 
-                                return x, y, z
+                                points[side] = [x,y,z]
 
                             else:
                                 u_avg = int(u_avg * self._w)
@@ -276,17 +281,30 @@ class RealsenseTracker():
                                 v = np.clip(int(prediction[1]), 0, self._h - 1)
                                 
                                 # Transform between coordinate
-                                points[side][0] = np.round((u - self._CX)*depth/self._FX, 3)
-                                points[side][1] = np.round((v - self._CY)*depth/self._FY, 3)
-                                points[side][2] = depth
-
-                        ges[side] = gestures[idx][0].category_name
-                        marker = ROSUtils.create_marker(namespace=side,
-                                                        text=ges[side],
-                                                        pos = points[side])
-                        markers.markers.append(marker)
+                                pt = np.asarray([0,np.round((u - self._CX)*depth/self._FX, 3), np.round((v - self._CY)*depth/self._FY, 3), depth])
+                                camera_tf = self._buffer.lookup_transform(target_frame='base_footprint', source_frame='rs_camera_color_optical_frame', time=rospy.Time(0))
+                                cam_quat = np.asarray([camera_tf.transform.rotation.w, 
+                                            camera_tf.transform.rotation.x,
+                                            camera_tf.transform.rotation.y,
+                                            camera_tf.transform.rotation.z])
+                                cam_quat_inv = cam_quat
+                                cam_quat_inv[1:] = -1*cam_quat[1:]
+                                pt = cam_quat * pt * cam_quat_inv.T + np.asarray([0,camera_tf.transform.translation.x,
+                                                                              camera_tf.transform.translation.y,
+                                                                              camera_tf.transform.translation.z])       
+                                print(pt)
+                                points[side][0] = pt[1]
+                                points[side][1] = pt[2]
+                                points[side][2] = pt[3]
+                                
+                                
+                        if not normalized:
+                            marker = ROSUtils.create_marker(namespace=side,
+                                                            text=ges[side],
+                                                            pos = points[side])
+                            markers.markers.append(marker)
            
-            self._markers_pub.publish(markers)
+            self._markers_pub.publish(markers) if not normalized else None
             # if ges['Left'] == 'Pointing_Up' and ges['Right'] == 'Pointing_Up':
             #     rospy.signal_shutdown('Both hands are pointing up')
         else:
@@ -294,15 +312,15 @@ class RealsenseTracker():
             return None
         
         if self._data_plot:
-            elapsed_time = time.time() - start_time
-            self.elapsed_times.append(elapsed_time)
-            rospy.logdebug(f'Elapsed time: {elapsed_time:.3f}')
+            # elapsed_time = time.time() - start_time
+            # self.elapsed_times.append(elapsed_time)
+            # rospy.logdebug(f'Elapsed time: {elapsed_time:.3f}')
             RealsenseTracker._stream_result(self._img, result)
             
-        return points   
+        return points, ges   
 
     def _get_hand_twist(self, point, prev_point, side, Δt):
-        scale = 0.2
+        scale = 0.5
         twist = ROSUtils.create_twiststamped()
         if point is not None and prev_point is not None:
             velocity = np.zeros(6)
