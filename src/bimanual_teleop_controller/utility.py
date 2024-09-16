@@ -14,9 +14,6 @@ from bimanual_teleop_controller.math_utils import CalcFuncs
 from typing import Union
 ArrayLike = Union[list, np.ndarray, tuple, set]
 
-MODEL_PATH = rospkg.RosPack().get_path('bimanual_teleop_controller') + '/config/gesture_recognizer.task'
-CFG_PATH = rospkg.RosPack().get_path('bimanual_teleop_controller') + '/config/bmcp_cfg.yaml'
-
 def load_config(file_path):
     with open(file_path, 'r') as stream:
         try:
@@ -25,6 +22,7 @@ def load_config(file_path):
             print(exc)
     return config
 
+CFG_PATH = rospkg.RosPack().get_path('bimanual_teleop_controller') + '/config/bmcp_cfg.yaml'
 config = load_config(CFG_PATH)
 
 class AnimateFuncs:
@@ -169,7 +167,7 @@ class ROSUtils:
         return ts
 
 
-def plot_joint_velocities(actual_data: np.ndarray, desired_data: np.ndarray, dt=0.001, title='Joint Velocities'):
+def plot_joint_velocities(actual_data: np.ndarray, desired_data: np.ndarray, dt=0.001, title='Joint Velocities',jointnames:dict = {}):
 
     actual_data = np.array(actual_data)
     desired_data = np.array(desired_data)
@@ -206,7 +204,7 @@ def plot_joint_velocities(actual_data: np.ndarray, desired_data: np.ndarray, dt=
             joint_axes.annotate(f'Min: {min_value:.2f}', xy=(min_time, min_value), xytext=(10, -10),
                                 textcoords='offset points', ha='center', va='top', color=color)
 
-        joint_axes.set_title(config['JOINT_NAMES'][title][i])
+        joint_axes.set_title(jointnames[title][i])
 
     fig.legend(['Actual', 'Desired'], loc='upper right')
     fig.suptitle(title)

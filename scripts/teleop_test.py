@@ -16,16 +16,16 @@ from bimanual_teleop_controller.joystick_controller import JoystickController as
 
 class BMCP:
 
-    _DAMPER_STEEPNESS = config['DAMPER_STEEPNESS']
-    _MANIP_THRESH = config['MANIPULABILITY_THRESHOLD']
-    _CONTROL_RATE = config['CONTROL_RATE']
-    _TWIST_GAIN = config['TWIST_GAIN']
-    _DRIFT_GAIN = config['DRIFT_GAIN']
-    _HOLD_DURATION = config['HOLD_DURATION']
-
     # TODO Inspect issue on hand tracking node crashing
 
     def __init__(self, config, data_plot, motion_tracker, dominant_hand) -> None:
+        
+        self._DAMPER_STEEPNESS = config['DAMPER_STEEPNESS']
+        self._MANIP_THRESH = config['MANIPULABILITY_THRESHOLD']
+        self._CONTROL_RATE = config['CONTROL_RATE']
+        self._TWIST_GAIN = config['TWIST_GAIN']
+        self._DRIFT_GAIN = config['DRIFT_GAIN']
+        self._HOLD_DURATION = config['HOLD_DURATION']
 
         self._data_plot = data_plot
         self._dominant_hand = dominant_hand
@@ -365,8 +365,9 @@ if __name__ == "__main__":
         data_plot = rospy.get_param('~data_plot', False)
         motion_tracker = rospy.get_param('~motion_tracker', False)
         dominant_hand = rospy.get_param('~dominant_hand', 'Right')
+        controller_cfg = load_config(rospkg.RosPack().get_path('bimanual_teleop_controller') + '/config/bmcp_cfg.yaml')
 
-        b = BMCP(config=config,
+        b = BMCP(config=controller_cfg,
                  data_plot=data_plot,
                  motion_tracker=motion_tracker,
                  dominant_hand=dominant_hand)
