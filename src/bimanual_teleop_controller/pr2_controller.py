@@ -174,7 +174,7 @@ class PR2Controller:
 
         if max_weights > 0.8:
             side = 'left' if side == 'l' else 'right'
-            rumble_freq = (max_weights - 0.8)*3
+            rumble_freq = (max_weights - 0.8)*5
             rospy.logwarn(
                 f"\nJoint limit avoidance mechanism is applied with max weight: {max_weights:.2f} at joint {self._JOINT_NAMES[side][joint_on_max_limit[0]]}")
 

@@ -4,6 +4,7 @@ import sys
 
 import rospy
 import rospkg
+from ds4_driver_msgs.msg import Feedback
 from sensor_msgs.msg import Joy, JoyFeedback, JoyFeedbackArray
 from bimanual_teleop_controller.math_utils import LowPassFilter
 from bimanual_teleop_controller.utility import load_config
@@ -33,6 +34,14 @@ class JoystickController():
 
         self._control_mapping = joy_mapping_cfg[controller_name]['controls']
 
+        if controller_name == "Wireless Controller" or controller_name == "Sony Interactive Entertainment Wireless Controller":
+            self._ds4_feedback_pub = rospy.Publisher("/set_feedback", Feedback, queue_size=10)
+            self._rumble_strength = float(0.0)
+            self._LED = {
+                'r': 0.0,
+                'g': 0.0,
+                'b': 0.0
+            }
 
         # Initialize the joystick message
         joy_topic = "/joy"
@@ -52,6 +61,33 @@ class JoystickController():
 
     def _joy_callback(self, joy_msg: Joy):
         self._joy_msg = (joy_msg.axes, joy_msg.buttons)
+
+        feedback = Feedback()
+        feedback.set_LED = True
+        feedback.led_r = float(self._LED['r'])
+        feedback.led_g = float(self._LED['g'])
+        feedback.led_b = float(self._LED['b'])
+        feedback.set_rumble = True
+        feedback.rumble_big = self._rumble_strength
+        self._ds4_feedback_pub.publish(feedback)
+
+    def set_rumble_strength(self, strength):
+        self._rumble_strength = float(strength)
+
+    def set_LED_blue(self):
+        self._LED['r'] = 0.0 
+        self._LED['g'] = 0.0
+        self._LED['b'] = 1.0
+
+    def set_LED_red(self):
+        self._LED['r'] = 1.0 
+        self._LED['g'] = 0.0
+        self._LED['b'] = 0.0
+
+    def set_LED_green(self):
+        self._LED['r'] = 0.0 
+        self._LED['g'] = 1.0
+        self._LED['b'] = 0.0
 
     def motion_to_twist(self, gain, base=False, pygame_joy=False):
         return self.joy_to_twist(gain, base, pygame_joy)
@@ -125,9 +161,7 @@ class JoystickController():
         twist[3:] = np.array([r, p, y]) * gain[1] * aggressive
         return twist, done
 
-    def controller_LED_on(self, LED_id):
-        joy_fbs_msg = self.joyfb_init(JoyFeedback.TYPE_LED, LED_id, 1)
-        self._feedback_pub.publish(joy_fbs_msg)
+
 
     def rumble(self, strength):
         joy_fbs_msg = self.joyfb_init(JoyFeedback.TYPE_RUMBLE, 0, strength)

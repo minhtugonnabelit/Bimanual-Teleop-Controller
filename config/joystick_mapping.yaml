@@ -16,13 +16,31 @@
     roll_ax: 3
     pitch_ax: 4
 
+"Wireless Controller":
+  dead_switch_index: 5
+  system_halt_index: -3
+  right_arm_index: 4
+  left_arm_index: 5
+  gripper_open_index: -2
+  gripper_close_index: -2
+  trigger_constraint_index: [8, 9]
+  controls:
+    up: 2
+    down: 0
+    yaw_left: 3
+    yaw_right: 1
+    x_ax: 1
+    y_ax: 0
+    roll_ax: 3
+    pitch_ax: 4
+
 "Sony Interactive Entertainment Wireless Controller":
   dead_switch_index: 5
   system_halt_index: -3
   right_arm_index: 4
   left_arm_index: 5
-  gripper_open_index: -4
-  gripper_close_index: -3
+  gripper_open_index: -2
+  gripper_close_index: -2
   trigger_constraint_index: [8, 9]
   controls:
     up: 2
@@ -51,3 +69,4 @@
     y_ax: 0
     roll_ax: 3
     pitch_ax: 4
+
