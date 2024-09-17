@@ -4,7 +4,7 @@ import sys
 
 import rospy
 import rospkg
-from ds4_driver_msgs.msg import Feedback
+from ds4_driver.msg import Feedback
 from sensor_msgs.msg import Joy, JoyFeedback, JoyFeedbackArray
 from bimanual_teleop_controller.math_utils import LowPassFilter
 from bimanual_teleop_controller.utility import load_config
@@ -21,8 +21,8 @@ class JoystickController():
         controller_name = self._joy_pygame.get_name()
         rospy.logdebug(f'Controller name: {controller_name}')
 
-        joy_mapping_cfg = load_config(rospkg.RosPack().get_path('bimanual_teleop_controller') /
-                                      + '/config/joy_mapping.yaml')
+        cfg_path = rospkg.RosPack().get_path('bimanual_teleop_controller') + '/config/joy_mapping.yaml'
+        joy_mapping_cfg = load_config(cfg_path)
         
         self._left_arm_index = joy_mapping_cfg[controller_name]['left_arm_index']
         self._right_arm_index = joy_mapping_cfg[controller_name]['right_arm_index']
