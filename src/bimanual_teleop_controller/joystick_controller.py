@@ -62,6 +62,10 @@ class JoystickController():
     def _joy_callback(self, joy_msg: Joy):
         self._joy_msg = (joy_msg.axes, joy_msg.buttons)
 
+        now = rospy.Time.now()
+        if (now - self._last_published).to_sec() < 0.1:
+            return
+
         feedback = Feedback()
         feedback.set_LED = True
         feedback.led_r = float(self._LED['r'])
@@ -70,6 +74,8 @@ class JoystickController():
         feedback.set_rumble = True
         feedback.rumble_big = self._rumble_strength
         self._ds4_feedback_pub.publish(feedback)
+
+        self._last_published = rospy.Time.now()
 
     def set_rumble_strength(self, strength):
         self._rumble_strength = float(strength)
