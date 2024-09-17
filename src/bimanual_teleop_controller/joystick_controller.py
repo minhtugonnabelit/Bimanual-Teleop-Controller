@@ -21,7 +21,7 @@ class JoystickController():
         controller_name = self._joy_pygame.get_name()
         rospy.logdebug(f'Controller name: {controller_name}')
 
-        cfg_path = rospkg.RosPack().get_path('bimanual_teleop_controller') + '/config/joy_mapping.yaml'
+        cfg_path = rospkg.RosPack().get_path('bimanual_teleop_controller') + '/config/joystick_mapping.yaml'
         joy_mapping_cfg = load_config(cfg_path)
         
         self._left_arm_index = joy_mapping_cfg[controller_name]['left_arm_index']
