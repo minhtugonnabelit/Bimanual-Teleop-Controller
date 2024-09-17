@@ -197,26 +197,48 @@ class BMCP:
 
         joy_msg = self.joystick.get_joy_msg()
 
-        if joy_msg[1][self._system_halt_index]:
-            self.stop_teleop()
+        if self.joystick.using_ds4:
+            if joy_msg.button_ps:
+                self.stop_teleop()
 
-        self.handle_mode_change() if (joy_msg[1][self._trigger_constraint_index[0]] * joy_msg[1][self._trigger_constraint_index[1]])\
-            else self.reset_hold_timer()
-        
-        if joy_msg[0][self._dead_switch_index] != 1:
+            self.handle_constrained_twist(qdot, joy_msg.twist) if (joy_msg.button_share * joy_msg.button_options)else self.reset_hold_timer()
+
             twist, _ = self.joystick.joy_to_twist(self._TWIST_GAIN)
-            qdot = self.handle_constrained_twist(qdot, twist) if self._constraint_is_set \
-                else self.handle_indiv_arm_joy(qdot, twist, joy_msg)
+            if self._constraint_is_set:
+                if joy_msg.button_r1 and joy_msg.button_l1:
+                    qdot = self.handle_constrained_twist(qdot, twist)
+            else:
+                qdot = self.handle_indiv_arm_joy(qdot, twist, joy_msg)
+
+        else:
+            if joy_msg[1][self._system_halt_index]:
+                self.stop_teleop()
+
+            self.handle_mode_change() if (joy_msg[1][self._trigger_constraint_index[0]] * joy_msg[1][self._trigger_constraint_index[1]])\
+                else self.reset_hold_timer()
+            
+            if joy_msg[0][self._dead_switch_index] != 1:
+                twist, _ = self.joystick.joy_to_twist(self._TWIST_GAIN)
+                qdot = self.handle_constrained_twist(qdot, twist) if self._constraint_is_set \
+                    else self.handle_indiv_arm_joy(qdot, twist, joy_msg)
 
         return qdot
 
     def handle_indiv_arm_joy(self, qdot, twist, joy_msg):
-        if joy_msg[1][self._right_arm_index]:  # left bumper
-            qdot[7:] = self.controller.process_arm_movement(
-                side='r', twist=twist, manip_thresh=self._MANIP_THRESH, damper_steepness=self._DAMPER_STEEPNESS)
-        if joy_msg[1][self._left_arm_index]:  # right bumper
-            qdot[:7] = self.controller.process_arm_movement(
-                side='l', twist=twist, manip_thresh=self._MANIP_THRESH, damper_steepness=self._DAMPER_STEEPNESS)
+        if self.joystick.using_ds4:
+            if joy_msg.button_l1:
+                qdot[7:] = self.controller.process_arm_movement(
+                    side='r', twist=twist, manip_thresh=self._MANIP_THRESH, damper_steepness=self._DAMPER_STEEPNESS)
+            if joy_msg.button_r1:
+                qdot[:7] = self.controller.process_arm_movement(
+                    side='l', twist=twist, manip_thresh=self._MANIP_THRESH, damper_steepness=self._DAMPER_STEEPNESS)
+        else:
+            if joy_msg[1][self._right_arm_index]:  # left bumper
+                qdot[7:] = self.controller.process_arm_movement(
+                    side='r', twist=twist, manip_thresh=self._MANIP_THRESH, damper_steepness=self._DAMPER_STEEPNESS)
+            if joy_msg[1][self._left_arm_index]:  # right bumper
+                qdot[:7] = self.controller.process_arm_movement(
+                    side='l', twist=twist, manip_thresh=self._MANIP_THRESH, damper_steepness=self._DAMPER_STEEPNESS)
 
         return qdot
 
@@ -302,9 +324,13 @@ class BMCP:
                 arm.open_gripper()
             elif joy_msg[1][self._gripper_close_index] == 1:
                 arm.close_gripper()
-
+        
+        elif self.joystick.using_ds4:
+            if joy_msg.button_dpad_right:
+                arm.open_gripper()
+            if joy_msg.button_dpad_left:
+                arm.close_gripper()
         else:
-
             if self.joystick.controller_name == "Xbox 360 Controller":
                 if joy_msg[0][self._gripper_close_index] == 1:  # up
                     arm.open_gripper()
@@ -328,17 +354,31 @@ class BMCP:
         while self._state != 'Done':
 
             joy_msg = self.joystick.get_joy_msg()
-
-            if joy_msg[1][self._right_arm_index]:  # left bumper
-                self.handle_gripper(self._right_arm, joy_msg)
-
-            if joy_msg[1][self._left_arm_index]:  # right bumper
-                self.handle_gripper(self._left_arm, joy_msg)
-
             twist = np.zeros(6)
-            if joy_msg[0][2] != 1:  # left trigger for base controller
-                twist, _ = self.joystick.joy_to_twist(
-                    self._TWIST_GAIN, base=True)
+
+            if not self.joystick.using_ds4:
+
+                if joy_msg[1][self._right_arm_index]:  # left bumper
+                    self.handle_gripper(self._right_arm, joy_msg)
+
+                if joy_msg[1][self._left_arm_index]:  # right bumper
+                    self.handle_gripper(self._left_arm, joy_msg)
+
+                if joy_msg[0][2] != 1:  # left trigger for base controller
+                    twist, _ = self.joystick.joy_to_twist(
+                        self._TWIST_GAIN, base=True)
+            
+            else:
+
+                if joy_msg.button_l1:
+                    self.handle_gripper(self._right_arm, joy_msg)
+
+                if joy_msg.button_r1:
+                    self.handle_gripper(self._left_arm, joy_msg)
+
+                if not joy_msg.button_l2:
+                    twist, _ = self.joystick.joy_to_twist(
+                        self._TWIST_GAIN, base=True)
 
             self.controller.move_base(twist)
             self.controller.sleep()

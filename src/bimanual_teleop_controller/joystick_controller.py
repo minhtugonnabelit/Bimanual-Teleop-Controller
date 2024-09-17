@@ -4,7 +4,7 @@ import sys
 
 import rospy
 import rospkg
-from ds4_driver.msg import Feedback
+from ds4_driver.msg import Feedback, Status
 from sensor_msgs.msg import Joy, JoyFeedback, JoyFeedbackArray
 from bimanual_teleop_controller.math_utils import LowPassFilter
 from bimanual_teleop_controller.utility import load_config
@@ -31,11 +31,21 @@ class JoystickController():
         self._gripper_open_index = joy_mapping_cfg[controller_name]['gripper_open_index']
         self._gripper_close_index = joy_mapping_cfg[controller_name]['gripper_close_index']
         self._trigger_constraint_index = joy_mapping_cfg[controller_name]['trigger_constraint_index']
-
         self._control_mapping = joy_mapping_cfg[controller_name]['controls']
 
+        self._using_ds4 = False
+        joy_topic = "/joy"
+        joy_msg_type = Joy
+        joy_feedback_topic = "/joy/set_feedback"
+        joy_feedback_msg_type = JoyFeedbackArray
+        
         if controller_name == "Wireless Controller" or controller_name == "Sony Interactive Entertainment Wireless Controller":
-            self._ds4_feedback_pub = rospy.Publisher("/set_feedback", Feedback, queue_size=10)
+            self._using_ds4 = True
+            joy_topic = "/status"
+            joy_msg_type = Status
+            joy_feedback_topic = "/set_feedback"
+            joy_feedback_msg_type = Feedback
+            self._last_feedback = rospy.Time.now()
             self._rumble_strength = float(0.0)
             self._LED = {
                 'r': 0.0,
@@ -44,11 +54,9 @@ class JoystickController():
             }
 
         # Initialize the joystick message
-        joy_topic = "/joy"
-        self._joy_msg = rospy.wait_for_message(joy_topic, Joy)
-        self._subscriber = rospy.Subscriber(joy_topic, Joy, self._joy_callback)
-        self._feedback_pub = rospy.Publisher(
-            "/joy/set_feedback", JoyFeedbackArray, queue_size=10)
+        self._joy_msg = rospy.wait_for_message(joy_topic, joy_msg_type)
+        self._subscriber = rospy.Subscriber(joy_topic, joy_msg_type, self._joy_callback)
+        self._feedback_pub = rospy.Publisher(joy_feedback_topic, joy_feedback_msg_type, queue_size=10)
 
         # Initialize low-pass filters for each axis
         alpha = 0.3  # Smoothing factor for the low-pass filter
@@ -60,22 +68,24 @@ class JoystickController():
         self.lpf_y = LowPassFilter(alpha)
 
     def _joy_callback(self, joy_msg: Joy):
-        self._joy_msg = (joy_msg.axes, joy_msg.buttons)
+
+        self._joy_msg = (joy_msg.axes, joy_msg.buttons) if not self._using_ds4 else joy_msg
+
 
         now = rospy.Time.now()
-        if (now - self._last_published).to_sec() < 0.1:
+        if (now - self._last_feedback).to_sec() < 0.1:
             return
 
         feedback = Feedback()
-        feedback.set_LED = True
+        feedback.set_led = True
         feedback.led_r = float(self._LED['r'])
         feedback.led_g = float(self._LED['g'])
         feedback.led_b = float(self._LED['b'])
         feedback.set_rumble = True
         feedback.rumble_big = self._rumble_strength
-        self._ds4_feedback_pub.publish(feedback)
+        self._feedback_pub.publish(feedback)
 
-        self._last_published = rospy.Time.now()
+        self._last_feedback = rospy.Time.now()
 
     def set_rumble_strength(self, strength):
         self._rumble_strength = float(strength)
@@ -129,23 +139,37 @@ class JoystickController():
 
         else:
             joy_msg = self.get_joy_msg()
-            trigger_side = 5 if not base else 2
-            aggressive = (-joy_msg[0][trigger_side] + 1) / 2
 
-            # Apply low-pass filter
-            vy = self.lpf_vy.filter(-joy_msg[0][self._control_mapping['y_ax']] / np.abs(joy_msg[0][self._control_mapping['y_ax']])
-                                    if joy_msg[0][self._control_mapping['y_ax']] != 0 else 0)
-            vx = self.lpf_vx.filter(-joy_msg[0][self._control_mapping['x_ax']] / np.abs(joy_msg[0][self._control_mapping['x_ax']])
-                                    if joy_msg[0][self._control_mapping['x_ax']] != 0 else 0)
-            y = joy_msg[1][self._control_mapping['yaw_left']] - \
-                joy_msg[1][self._control_mapping['yaw_right']]  # button X and B
+            if not self._using_ds4:
 
-            if not base:
-                vz = self.lpf_vz.filter(joy_msg[1][self._control_mapping['up']] - joy_msg[1][self._control_mapping['down']])  # button Y and A
-                r = self.lpf_r.filter(joy_msg[0][self._control_mapping['roll_ax']] / np.abs(joy_msg[0][self._control_mapping['roll_ax']]) \
-                                      if joy_msg[0][self._control_mapping['roll_ax']] != 0 else 0)
-                p = self.lpf_p.filter(-joy_msg[0][self._control_mapping['pitch_ax']] / np.abs(joy_msg[0][self._control_mapping['pitch_ax']]) \
-                                      if joy_msg[0][self._control_mapping['pitch_ax']] != 0 else 0)
+                trigger_side = 5 if not base else 2
+                aggressive = (-joy_msg[0][trigger_side] + 1) / 2
+
+                # Apply low-pass filter
+                vy = self.lpf_vy.filter(-joy_msg[0][self._control_mapping['y_ax']] / np.abs(joy_msg[0][self._control_mapping['y_ax']])
+                                        if joy_msg[0][self._control_mapping['y_ax']] != 0 else 0)
+                vx = self.lpf_vx.filter(-joy_msg[0][self._control_mapping['x_ax']] / np.abs(joy_msg[0][self._control_mapping['x_ax']])
+                                        if joy_msg[0][self._control_mapping['x_ax']] != 0 else 0)
+                y = joy_msg[1][self._control_mapping['yaw_left']] - \
+                    joy_msg[1][self._control_mapping['yaw_right']]  # button X and B
+
+                if not base:
+                    vz = self.lpf_vz.filter(joy_msg[1][self._control_mapping['up']] - joy_msg[1][self._control_mapping['down']])  # button Y and A
+                    r = self.lpf_r.filter(joy_msg[0][self._control_mapping['roll_ax']] / np.abs(joy_msg[0][self._control_mapping['roll_ax']]) \
+                                        if joy_msg[0][self._control_mapping['roll_ax']] != 0 else 0)
+                    p = self.lpf_p.filter(-joy_msg[0][self._control_mapping['pitch_ax']] / np.abs(joy_msg[0][self._control_mapping['pitch_ax']]) \
+                                        if joy_msg[0][self._control_mapping['pitch_ax']] != 0 else 0)
+            else:
+                aggressive = joy_msg.axis_r2
+
+                vy = self.lpf_vy.filter(joy_msg.axis_left_x)
+                vx = self.lpf_vx.filter(joy_msg.axis_left_y)
+                y = joy_msg.button_square - joy_msg.button_circle
+
+                if not base:
+                    vz = joy_msg.button_triangle - joy_msg.button_cross
+                    r = self.lpf_r.filter(joy_msg.axis_right_x)
+                    p = self.lpf_p.filter(joy_msg.axis_right_y)
 
             # vy = self.lpf_vy.filter(-self._joy_msg[0][self._y_ax] / np.abs(
             #     self._joy_msg[0][self._y_ax]) if self._joy_msg[0][self._y_ax] != 0 else 0)
@@ -166,7 +190,6 @@ class JoystickController():
         twist[:3] = np.array([vx, vy, vz]) * gain[0] * aggressive
         twist[3:] = np.array([r, p, y]) * gain[1] * aggressive
         return twist, done
-
 
 
     def rumble(self, strength):
@@ -239,3 +262,7 @@ class JoystickController():
     @property
     def controller_name(self):
         return self._joy_pygame.get_name()
+
+    @property
+    def using_ds4(self):
+        return self._using_ds4
